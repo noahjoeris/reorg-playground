@@ -30,6 +30,14 @@
   --color-border:            var(--border);
   --color-accent:            var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+
+  /* --- Tip status colors --- */
+  --color-tip-active:        #79FF00;
+  --color-tip-invalid:       #CC203B;
+  --color-tip-valid-fork:    #3CACB5;
+  --color-tip-valid-headers: #FF69B4;
+  --color-tip-headers-only:  #FF8800;
+  --color-tip-unknown:       #999999;
 }
 
 /* =====================================================================
