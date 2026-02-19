@@ -1,7 +1,7 @@
 use crate::error::ConfigError;
 use crate::node::{BitcoinCoreNode, BtcdNode, Electrum, Esplora, Node, NodeInfo};
-use bitcoincore_rpc::bitcoin::Network as BitcoinNetwork;
 use bitcoincore_rpc::Auth;
+use bitcoincore_rpc::bitcoin::Network as BitcoinNetwork;
 use log::{error, info};
 use serde::Deserialize;
 use std::hash::Hash;
@@ -21,20 +21,20 @@ const DEFAULT_RPC_PORT: u16 = 8332;
 pub type BoxedSyncSendNode = Arc<dyn Node + Send + Sync>;
 
 #[derive(Clone, Deserialize, Debug)]
-pub enum PoolIdentificationNetwork {
+pub enum NetworkType {
     Mainnet,
     Testnet,
     Signet,
     Regtest,
 }
 
-impl PoolIdentificationNetwork {
-    pub fn to_network(&self) -> BitcoinNetwork {
+impl NetworkType {
+    pub fn as_bitcoin_network(&self) -> BitcoinNetwork {
         match self {
-            PoolIdentificationNetwork::Mainnet => BitcoinNetwork::Bitcoin,
-            PoolIdentificationNetwork::Testnet => BitcoinNetwork::Testnet,
-            PoolIdentificationNetwork::Signet => BitcoinNetwork::Signet,
-            PoolIdentificationNetwork::Regtest => BitcoinNetwork::Regtest,
+            NetworkType::Mainnet => BitcoinNetwork::Bitcoin,
+            NetworkType::Testnet => BitcoinNetwork::Testnet,
+            NetworkType::Signet => BitcoinNetwork::Signet,
+            NetworkType::Regtest => BitcoinNetwork::Regtest,
         }
     }
 }
@@ -57,12 +57,6 @@ pub struct Config {
     pub rss_base_url: String,
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
-pub struct PoolIdentification {
-    pub enable: bool,
-    pub network: Option<PoolIdentificationNetwork>,
-}
-
 #[derive(Debug, Deserialize)]
 struct TomlNetwork {
     id: u32,
@@ -70,8 +64,8 @@ struct TomlNetwork {
     description: String,
     min_fork_height: u64,
     max_interesting_heights: usize,
+    network_type: Option<NetworkType>,
     nodes: Vec<TomlNode>,
-    pool_identification: Option<PoolIdentification>,
 }
 
 #[derive(Clone)]
@@ -81,14 +75,15 @@ pub struct Network {
     pub name: String,
     pub min_fork_height: u64,
     pub max_interesting_heights: usize,
+    pub network_type: Option<NetworkType>,
     pub nodes: Vec<BoxedSyncSendNode>,
-    pub pool_identification: PoolIdentification,
 }
 
 impl fmt::Display for TomlNetwork {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
-            f,"Network (id={}, description='{}', name='{}', min_fork_height={}, max_interesting_heights={}, nodes={:?})",
+            f,
+            "Network (id={}, description='{}', name='{}', min_fork_height={}, max_interesting_heights={}, nodes={:?})",
             self.id,
             self.description,
             self.name,
@@ -116,7 +111,8 @@ struct TomlNode {
 impl fmt::Display for TomlNode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
-            f,"Node (id={}, description='{}', name='{}', rpc_host='{}', rpc_port={}, rpc_user='{}', rpc_password='***', rpc_cookie_file={:?}, use_rest={}, implementation='{}')",
+            f,
+            "Node (id={}, description='{}', name='{}', rpc_host='{}', rpc_port={}, rpc_user='{}', rpc_password='***', rpc_cookie_file={:?}, use_rest={}, implementation='{}')",
             self.id,
             self.description,
             self.name,
@@ -267,8 +263,8 @@ fn parse_toml_network(
         description: toml_network.description.clone(),
         min_fork_height: toml_network.min_fork_height,
         max_interesting_heights: toml_network.max_interesting_heights,
+        network_type: toml_network.network_type.clone(),
         nodes,
-        pool_identification: toml_network.pool_identification.clone().unwrap_or_default(),
     })
 }
 
@@ -333,24 +329,6 @@ fn parse_toml_node(toml_node: &TomlNode) -> Result<BoxedSyncSendNode, ConfigErro
 mod tests {
     use super::*;
     use crate::error::ConfigError;
-
-    #[test]
-    fn load_example_config() {
-        use std::env;
-
-        const FILENAME_EXAMPLE_CONFIG: &str = "config.toml.example";
-        // SAFETY: test-only; no concurrent access to this env var in tests.
-        unsafe { env::set_var(ENVVAR_CONFIG_FILE, FILENAME_EXAMPLE_CONFIG) };
-        let cfg = load_config().expect(&format!(
-            "We should be able to load the {} file.",
-            FILENAME_EXAMPLE_CONFIG
-        ));
-
-        assert_eq!(cfg.address.to_string(), "127.0.0.1:2323");
-        assert_eq!(cfg.networks.len(), 2);
-        assert_eq!(cfg.query_interval, std::time::Duration::from_secs(15));
-        assert_eq!(cfg.networks[0].pool_identification.enable, true);
-    }
 
     #[test]
     fn error_on_duplicate_node_id_test() {

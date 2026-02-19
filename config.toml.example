@@ -12,61 +12,66 @@ address = "127.0.0.1:2323"
 # RSS feeds need a URL of the site. This is optional. If unset,
 # the RSS feeds might not be valid according to the RSS 2.0 specification.
 # Some RSS readers might complain.
-rss_base_url = "https://fork-observer.example.com/"
+rss_base_url = ""
 
 [[networks]]
-id = 1
+id = 1 # identifier in DB
 name = "Mainnet"
-description = "An example mainnet node."
+description = ""
 min_fork_height = 0
 max_interesting_heights = 100
-    [networks.pool_identification]
-    enable = true
-    network = "Mainnet"
+network_type = "Mainnet" # Mainnet | Testnet | Signet | Regtest
 
     [[networks.nodes]]
-    id = 0
+    id = 0 # identifier in DB
     name = "Node A"
     description = "A node with a signet-miner that is always mining blocks"
-    # rpc_cookie_file = "~/.bitcoin/.cookie"
+    implementation = "" # bitcoincore | btcd | esplora | electrum
+
     rpc_host = "127.0.0.1"
     rpc_port = 38342
-    rpc_user = "forkobserver"
+    rpc_user = ""
     rpc_password = ""
+    # rpc_cookie_file = "~/.bitcoin/.cookie"
+
 
     [[networks.nodes]]
-    id = 1
+    id = 1 # identifier in DB
     name = "Node B"
-    description = "R node with a signet-miner that is always mining blocks"
-    # rpc_cookie_file = "~/.bitcoin/.cookie"
+    description = "A node with a signet-miner that is always mining blocks"
+    implementation = "" # bitcoincore | btcd | esplora | electrum
+
     rpc_host = "127.0.0.1"
     rpc_port = 38332
-    rpc_user = "forkobserver"
+    rpc_user = ""
     rpc_password = ""
+    # rpc_cookie_file = "~/.bitcoin/.cookie"
+
 
     [[networks.nodes]]
-    id = 3
+    id = 2
     name = "Electrum Emzy"
     description = "URL electrum.emzy.de:50002"
-    rpc_host = "ssl://electrum.emzy.de"
-    rpc_port = 50002
     implementation = "electrum"
 
+    rpc_host = "ssl://electrum.emzy.de"
+    rpc_port = 50002
+
 [[networks]]
-id = 0xFFFFFFFE
-name = "FFFFFFFE testnetwork"
-description = "example"
+id = 2
+name = "testnetwork"
+description = ""
 min_fork_height = 5
 max_interesting_heights = 200
-    [networks.pool_identification]
-    enable = false
+network_type = "Testnet" # Mainnet | Testnet | Signet | Regtest
 
     [[networks.nodes]]
     id = 0
     name = "Node A"
     description = "A node. Just A node."
-    # rpc_cookie_file = "~/.bitcoin/.cookie"
+    
     rpc_host = "127.0.0.1"
     rpc_port = 38342
-    rpc_user = "forkobserver"
+    rpc_user = ""
     rpc_password = ""
+    # rpc_cookie_file = "~/.bitcoin/.cookie"

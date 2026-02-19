@@ -1,6 +1,6 @@
-use bitcoin_pool_identification::{default_data, PoolIdentification};
-use bitcoincore_rpc::bitcoin::{BlockHash, Network};
+use bitcoin_pool_identification::{PoolIdentification, default_data};
 use bitcoincore_rpc::Error::JsonRpc;
+use bitcoincore_rpc::bitcoin::{BlockHash, Network};
 use env_logger::Env;
 use log::{debug, error, info, warn};
 use petgraph::graph::NodeIndex;
@@ -10,11 +10,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{Mutex, broadcast};
 use tokio::task;
-use tokio::time::{interval, interval_at, sleep, Duration, Instant};
+use tokio::time::{Duration, Instant, interval, interval_at, sleep};
 
-use axum::{routing::get, Router};
+use axum::{Router, routing::get};
 
 mod api;
 mod config;
@@ -29,8 +29,8 @@ mod types;
 use crate::config::BoxedSyncSendNode;
 use crate::error::{DbError, MainError};
 use types::{
-    AppState, Cache, Caches, ChainTip, Db, Fork, HeaderInfo, HeaderInfoJson, NetworkJson,
-    NodeData, NodeDataJson, Tree,
+    AppState, Cache, Caches, ChainTip, Db, Fork, HeaderInfo, HeaderInfoJson, NetworkJson, NodeData,
+    NodeDataJson, Tree,
 };
 
 const VERSION_UNKNOWN: &str = "unknown";
@@ -91,13 +91,7 @@ async fn populate_cache(network: &config::Network, tree: &Tree, caches: &Caches)
             .map(|n| {
                 (
                     n.info().id,
-                    NodeDataJson::new(
-                        n.info(),
-                        &vec![],
-                        VERSION_UNKNOWN.to_string(),
-                        0,
-                        true,
-                    ),
+                    NodeDataJson::new(n.info(), &vec![], VERSION_UNKNOWN.to_string(), 0, true),
                 )
             })
             .collect();
@@ -124,7 +118,7 @@ async fn main() -> Result<(), MainError> {
 
     for network in config.networks.iter().cloned() {
         let network = network.clone();
-        let (pool_id_tx, mut pool_id_rx) = unbounded_channel::<BlockHash>();
+        let (miner_id_tx, mut miner_id_rx) = unbounded_channel::<BlockHash>();
 
         info!(
             "network '{}' (id={}) has {} nodes",
@@ -162,7 +156,7 @@ async fn main() -> Result<(), MainError> {
             let tree_clone = tree.clone();
             let caches_clone = caches.clone();
             let cache_changed_tx_cloned = cache_changed_tx.clone();
-            let pool_id_tx_clone = pool_id_tx.clone();
+            let miner_id_tx_clone = miner_id_tx.clone();
 
             let mut last_tips: Vec<ChainTip> = vec![];
             task::spawn(async move {
@@ -230,20 +224,20 @@ async fn main() -> Result<(), MainError> {
                                 Ok(headers) => headers,
                                 Err(e) => {
                                     error!(
-                                    "Could not fetch headers from {} on network '{}' (id={}): {}",
-                                    node.info(),
-                                    network.name,
-                                    network.id,
-                                    e
-                                );
+                                        "Could not fetch headers from {} on network '{}' (id={}): {}",
+                                        node.info(),
+                                        network.name,
+                                        network.id,
+                                        e
+                                    );
                                     continue;
                                 }
                             };
 
                         for hash in miners_needed.iter() {
-                            if let Err(e) = pool_id_tx_clone.send(*hash) {
+                            if let Err(e) = miner_id_tx_clone.send(*hash) {
                                 error!(
-                                    "Could not send a block hash into the pool identification channel: {}",
+                                    "Could not send a block hash into the miner identification channel: {}",
                                     e
                                 );
                             }
@@ -264,7 +258,12 @@ async fn main() -> Result<(), MainError> {
                                     node.info()
                                 ),
                                 Err(e) => {
-                                    error!("Could not write new headers for network '{}' by node {} to database: {}", network.name, node.info(), e);
+                                    error!(
+                                        "Could not write new headers for network '{}' by node {} to database: {}",
+                                        network.name,
+                                        node.info(),
+                                        e
+                                    );
                                     return MainError::Db(e);
                                 }
                             }
@@ -316,7 +315,7 @@ async fn main() -> Result<(), MainError> {
         let tree_clone = tree.clone();
         let caches_clone = caches.clone();
         let network_clone = network.clone();
-        let pool_id_tx_clone = pool_id_tx.clone();
+        let miner_id_tx_clone = miner_id_tx.clone();
         task::spawn(async move {
             sleep(Duration::from_secs(5 * 60)).await;
 
@@ -344,44 +343,44 @@ async fn main() -> Result<(), MainError> {
                 })
                 .map(|node| node.weight.clone())
             {
-                if let Err(e) = pool_id_tx_clone.send(header_info.header.block_hash()) {
+                if let Err(e) = miner_id_tx_clone.send(header_info.header.block_hash()) {
                     error!(
-                        "Could not send block hash into the pool identification channel: {}",
+                        "Could not send block hash into the miner identification channel: {}",
                         e
                     );
                 }
             }
         });
 
-        // Miner identification task (processes hashes from the pool_id channel)
+        // Miner identification task (processes hashes from the miner_id channel)
         let tree_clone = tree.clone();
         let db_clone2 = db_clone.clone();
         let caches_clone = caches.clone();
         let network_clone = network.clone();
         let cache_changed_tx_clone = cache_changed_tx.clone();
         task::spawn(async move {
-            let pool_identification_network = match network.pool_identification.network {
-                Some(ref network) => network.to_network(),
+            let miner_network_type = match network.network_type.as_ref() {
+                Some(network_type) => network_type.as_bitcoin_network(),
                 None => Network::Regtest,
             };
-            let pool_identification_data = default_data(pool_identification_network);
+            let miner_identification_data = default_data(miner_network_type);
 
             let limit = 100;
             let mut buffer: Vec<BlockHash> = Vec::with_capacity(limit);
             loop {
                 buffer.clear();
-                pool_id_rx.recv_many(&mut buffer, limit).await;
+                miner_id_rx.recv_many(&mut buffer, limit).await;
                 for hash in buffer.iter() {
-                    if !network_clone.pool_identification.enable {
-                        continue;
-                    }
-
                     let idx: NodeIndex = {
                         let tree_locked = tree_clone.lock().await;
                         match tree_locked.1.get(hash) {
                             Some(idx) => *idx,
                             None => {
-                                error!("Block hash {} not (yet) present in tree for network: {}. Skipping identification...", hash.to_string(), network_clone.name);
+                                error!(
+                                    "Block hash {} not (yet) present in tree for network: {}. Skipping identification...",
+                                    hash.to_string(),
+                                    network_clone.name
+                                );
                                 continue;
                             }
                         }
@@ -405,8 +404,8 @@ async fn main() -> Result<(), MainError> {
                         {
                             Ok(coinbase) => {
                                 miner = match coinbase.identify_pool(
-                                    pool_identification_network,
-                                    &pool_identification_data,
+                                    miner_network_type,
+                                    &miner_identification_data,
                                 ) {
                                     Some(result) => result.pool.name,
                                     None => MINER_UNKNOWN.to_string(),
@@ -704,7 +703,12 @@ async fn load_node_version(node: BoxedSyncSendNode, network: &str) -> String {
             }
             Err(e) => match e {
                 error::FetchError::BitcoinCoreRPC(JsonRpc(msg)) => {
-                    warn!("Could not fetch getnetworkinfo from node='{}' on network '{}': {:?}. Retrying...", node.info().name, network, msg);
+                    warn!(
+                        "Could not fetch getnetworkinfo from node='{}' on network '{}': {:?}. Retrying...",
+                        node.info().name,
+                        network,
+                        msg
+                    );
                 }
                 _ => {
                     error!(
