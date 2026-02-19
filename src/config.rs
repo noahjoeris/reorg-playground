@@ -105,14 +105,14 @@ struct TomlNode {
     rpc_user: Option<String>,
     rpc_password: Option<String>,
     use_rest: Option<bool>,
-    implementation: Option<String>,
+    client_implementation: Option<String>,
 }
 
 impl fmt::Display for TomlNode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Node (id={}, description='{}', name='{}', rpc_host='{}', rpc_port={}, rpc_user='{}', rpc_password='***', rpc_cookie_file={:?}, use_rest={}, implementation='{}')",
+            "Node (id={}, description='{}', name='{}', rpc_host='{}', rpc_port={}, rpc_user='{}', rpc_password='***', rpc_cookie_file={:?}, use_rest={}, client_implementation='{}')",
             self.id,
             self.description,
             self.name,
@@ -121,7 +121,9 @@ impl fmt::Display for TomlNode {
             self.rpc_user.as_ref().unwrap_or(&"".to_string()),
             self.rpc_cookie_file,
             self.use_rest.unwrap_or(DEFAULT_USE_REST),
-            self.implementation.as_ref().unwrap_or(&"".to_string()),
+            self.client_implementation
+                .as_ref()
+                .unwrap_or(&"".to_string()),
         )
     }
 }
@@ -269,8 +271,8 @@ fn parse_toml_network(
 }
 
 fn parse_toml_node(toml_node: &TomlNode) -> Result<BoxedSyncSendNode, ConfigError> {
-    let implementation = toml_node
-        .implementation
+    let client_implementation = toml_node
+        .client_implementation
         .as_ref()
         .unwrap_or(&DEFAULT_BACKEND.to_string())
         .parse::<Backend>()?;
@@ -279,10 +281,10 @@ fn parse_toml_node(toml_node: &TomlNode) -> Result<BoxedSyncSendNode, ConfigErro
         id: toml_node.id,
         name: toml_node.name.clone(),
         description: toml_node.description.clone(),
-        implementation: implementation.to_string(),
+        implementation: client_implementation.to_string(),
     };
 
-    let node: BoxedSyncSendNode = match implementation {
+    let node: BoxedSyncSendNode = match client_implementation {
         Backend::BitcoinCore => Arc::new(BitcoinCoreNode::new(
             node_info,
             format!(
@@ -445,7 +447,7 @@ mod tests {
                 name = "Esplora Node"
                 description = "A test explora node"
                 rpc_host = "https://esplora.example.org/api"
-                implementation = "esplora"
+                client_implementation = "esplora"
         "#,
         ) {
             Ok(config) => {
@@ -486,7 +488,7 @@ mod tests {
                 description = "electrum"
                 rpc_host = "tcp://localhost"
                 rpc_port = 1337
-                implementation = "electrum"
+                client_implementation = "electrum"
         "#,
         ) {
             Ok(config) => {

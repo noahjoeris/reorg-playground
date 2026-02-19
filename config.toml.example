@@ -26,7 +26,7 @@ network_type = "Mainnet" # Mainnet | Testnet | Signet | Regtest
     id = 0 # identifier in DB
     name = "Node A"
     description = "A node with a signet-miner that is always mining blocks"
-    implementation = "" # bitcoincore | btcd | esplora | electrum
+    client_implementation = "" # bitcoincore | btcd | esplora | electrum
 
     rpc_host = "127.0.0.1"
     rpc_port = 38342
@@ -39,7 +39,7 @@ network_type = "Mainnet" # Mainnet | Testnet | Signet | Regtest
     id = 1 # identifier in DB
     name = "Node B"
     description = "A node with a signet-miner that is always mining blocks"
-    implementation = "" # bitcoincore | btcd | esplora | electrum
+    client_implementation = "" # bitcoincore | btcd | esplora | electrum
 
     rpc_host = "127.0.0.1"
     rpc_port = 38332
@@ -52,7 +52,7 @@ network_type = "Mainnet" # Mainnet | Testnet | Signet | Regtest
     id = 2
     name = "Electrum Emzy"
     description = "URL electrum.emzy.de:50002"
-    implementation = "electrum"
+    client_implementation = "electrum"
 
     rpc_host = "ssl://electrum.emzy.de"
     rpc_port = 50002

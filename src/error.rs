@@ -133,15 +133,35 @@ pub enum ConfigError {
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ConfigError::CookieFileDoesNotExist => write!(f, "the .cookie file path set via rpc_cookie_file does not exist"),
-            ConfigError::NoBitcoinCoreRpcAuth => write!(f, "please specify a Bitcoin Core RPC .cookie file (option: 'rpc_cookie_file') or a rpc_user and rpc_password"),
+            ConfigError::CookieFileDoesNotExist => write!(
+                f,
+                "the .cookie file path set via rpc_cookie_file does not exist"
+            ),
+            ConfigError::NoBitcoinCoreRpcAuth => write!(
+                f,
+                "please specify a Bitcoin Core RPC .cookie file (option: 'rpc_cookie_file') or a rpc_user and rpc_password"
+            ),
             ConfigError::NoBtcdRpcAuth => write!(f, "no values for rpc_user and rpc_password"),
             ConfigError::NoNetworks => write!(f, "no networks defined in the configuration"),
-            ConfigError::UnknownImplementation => write!(f, "the node implementation defined in the config is not supported"),
-            ConfigError::DuplicateNodeId => write!(f, "a node id has been used multiple times in the same network"),
-            ConfigError::DuplicateNetworkId => write!(f, "a network id has been used multiple times"),
-            ConfigError::TomlError(e) => write!(f, "the TOML in the configuration file could not be parsed: {}", e),
-            ConfigError::ReadError(e) => write!(f, "the configuration file could not be read: {}", e),
+            ConfigError::UnknownImplementation => write!(
+                f,
+                "the node client_implementation defined in the config is not supported"
+            ),
+            ConfigError::DuplicateNodeId => write!(
+                f,
+                "a node id has been used multiple times in the same network"
+            ),
+            ConfigError::DuplicateNetworkId => {
+                write!(f, "a network id has been used multiple times")
+            }
+            ConfigError::TomlError(e) => write!(
+                f,
+                "the TOML in the configuration file could not be parsed: {}",
+                e
+            ),
+            ConfigError::ReadError(e) => {
+                write!(f, "the configuration file could not be read: {}", e)
+            }
             ConfigError::AddrError(e) => write!(f, "the address could not be parsed: {}", e),
         }
     }
