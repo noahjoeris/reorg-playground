@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createChangesEventSource, fetchData, fetchInfo, fetchNetworks } from './api'
+import { createChangesEventSource, fetchData, fetchNetworks } from './api'
 import type { ConnectionStatus, DataResponse, Network } from './types'
 
 export function useNetworks() {
@@ -94,24 +94,4 @@ export function useNetworkData(networkId: number | null) {
   }, [networkId, loadData])
 
   return { data, loading, error, connectionStatus }
-}
-
-export function useInfo() {
-  const [footer, setFooter] = useState('')
-
-  useEffect(() => {
-    let cancelled = false
-    fetchInfo()
-      .then(info => {
-        if (!cancelled) setFooter(info.footer)
-      })
-      .catch(() => {
-        // Non-critical — silently ignore
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  return { footer }
 }

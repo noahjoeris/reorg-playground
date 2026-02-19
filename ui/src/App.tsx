@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BlockDetailPanel } from './BlockDetailPanel'
 import { BlockNode, type BlockNodeType } from './BlockNode'
 import { ConnectionStatus } from './ConnectionStatus'
-import { useInfo, useNetworkData, useNetworks } from './hooks'
+import { useNetworkData, useNetworks } from './hooks'
 import { Legend } from './Legend'
 import { NetworkSelector } from './NetworkSelector'
 import { NodeInfoPanel } from './NodeInfoPanel'
@@ -29,7 +29,6 @@ function App() {
   const { networks, loading: networksLoading } = useNetworks()
   const [selectedNetworkId, setSelectedNetworkId] = useState<number | null>(getNetworkIdFromUrl)
   const [selectedBlock, setSelectedBlock] = useState<ProcessedBlock | null>(null)
-  const { footer } = useInfo()
 
   // Set initial network from URL or first network
   useEffect(() => {
@@ -101,11 +100,6 @@ function App() {
 
       {/* Block detail overlay */}
       {selectedBlock && <BlockDetailPanel block={selectedBlock} onClose={() => setSelectedBlock(null)} />}
-
-      {/* Footer */}
-      {footer && (
-        <div className="border-t border-border px-4 py-1 text-center text-xs text-muted-foreground">{footer}</div>
-      )}
     </div>
   )
 }

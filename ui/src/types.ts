@@ -61,10 +61,6 @@ export type DataResponse = {
   nodes: NodeInfo[]
 }
 
-export type InfoResponse = {
-  footer: string
-}
-
 export type DataChangedEvent = {
   network_id: number
 }

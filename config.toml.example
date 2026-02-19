@@ -1,0 +1,72 @@
+# reorg-playground configuration file
+
+# Database path of the key value store. Will be created if non-existing.
+database_path = "dbfile"
+
+# Interval in seconds for checking for new blocks
+query_interval = 15
+
+# Webserver listen address
+address = "127.0.0.1:2323"
+
+# RSS feeds need a URL of the site. This is optional. If unset,
+# the RSS feeds might not be valid according to the RSS 2.0 specification.
+# Some RSS readers might complain.
+rss_base_url = "https://fork-observer.example.com/"
+
+[[networks]]
+id = 1
+name = "Mainnet"
+description = "An example mainnet node."
+min_fork_height = 0
+max_interesting_heights = 100
+    [networks.pool_identification]
+    enable = true
+    network = "Mainnet"
+
+    [[networks.nodes]]
+    id = 0
+    name = "Node A"
+    description = "A node with a signet-miner that is always mining blocks"
+    # rpc_cookie_file = "~/.bitcoin/.cookie"
+    rpc_host = "127.0.0.1"
+    rpc_port = 38342
+    rpc_user = "forkobserver"
+    rpc_password = ""
+
+    [[networks.nodes]]
+    id = 1
+    name = "Node B"
+    description = "R node with a signet-miner that is always mining blocks"
+    # rpc_cookie_file = "~/.bitcoin/.cookie"
+    rpc_host = "127.0.0.1"
+    rpc_port = 38332
+    rpc_user = "forkobserver"
+    rpc_password = ""
+
+    [[networks.nodes]]
+    id = 3
+    name = "Electrum Emzy"
+    description = "URL electrum.emzy.de:50002"
+    rpc_host = "ssl://electrum.emzy.de"
+    rpc_port = 50002
+    implementation = "electrum"
+
+[[networks]]
+id = 0xFFFFFFFE
+name = "FFFFFFFE testnetwork"
+description = "example"
+min_fork_height = 5
+max_interesting_heights = 200
+    [networks.pool_identification]
+    enable = false
+
+    [[networks.nodes]]
+    id = 0
+    name = "Node A"
+    description = "A node. Just A node."
+    # rpc_cookie_file = "~/.bitcoin/.cookie"
+    rpc_host = "127.0.0.1"
+    rpc_port = 38342
+    rpc_user = "forkobserver"
+    rpc_password = ""
