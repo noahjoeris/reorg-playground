@@ -62,13 +62,14 @@ pub trait Node: Sync {
         &self,
         tips: &Vec<ChainTip>,
         tree: &Tree,
-        min_fork_height: u64,
+        first_tracked_height: u64,
     ) -> Result<(Vec<HeaderInfo>, Vec<BlockHash>), FetchError> {
         let mut new_headers: Vec<HeaderInfo> = Vec::new();
         let mut headers_needing_miners: Vec<BlockHash> = Vec::new();
 
         let mut active_new_headers: Vec<HeaderInfo> =
-            self.new_active_headers(tips, tree, min_fork_height).await?;
+            self.new_active_headers(tips, tree, first_tracked_height)
+                .await?;
         // We only want miners for active headers if they are (smaller) tip updates.
         if active_new_headers.len() <= 20 {
             for h in active_new_headers.iter() {
@@ -78,7 +79,7 @@ pub trait Node: Sync {
         new_headers.append(&mut active_new_headers);
 
         let mut nonactive_new_headers: Vec<HeaderInfo> = self
-            .new_nonactive_headers(tips, tree, min_fork_height)
+            .new_nonactive_headers(tips, tree, first_tracked_height)
             .await?;
         // We want miners for all headers in a non-active chain.
         for h in nonactive_new_headers.iter() {
@@ -92,7 +93,7 @@ pub trait Node: Sync {
         &self,
         tips: &Vec<ChainTip>,
         tree: &Tree,
-        min_fork_height: u64,
+        first_tracked_height: u64,
     ) -> Result<Vec<HeaderInfo>, FetchError> {
         let mut new_headers: Vec<HeaderInfo> = Vec::new();
 
@@ -113,10 +114,11 @@ pub trait Node: Sync {
         loop {
             match self.capabilities().batch_header_fetch {
                 true => {
-                    // We want to either start to query blocks at the `min_fork_height` or
+                    // We want to either start to query blocks at the `first_tracked_height` or
                     // the `tip height - STEP_SIZE + 1` which ever is larger.
                     // (+ 1 as we would otherwise not query the tip)
-                    let start_height = max(min_fork_height as i64, query_height - STEP_SIZE + 1);
+                    let start_height =
+                        max(first_tracked_height as i64, query_height - STEP_SIZE + 1);
                     let mut already_knew_a_header = false;
                     // get the header hash for a header STEP_SIZE away from query_height
                     let header_hash = self.block_hash(start_height as u64).await?;
@@ -182,7 +184,7 @@ pub trait Node: Sync {
                 }
             }
 
-            if query_height < min_fork_height as i64 {
+            if query_height < first_tracked_height as i64 {
                 break;
             }
         }
@@ -194,7 +196,7 @@ pub trait Node: Sync {
         &self,
         tips: &Vec<ChainTip>,
         tree: &Tree,
-        min_fork_height: u64,
+        first_tracked_height: u64,
     ) -> Result<Vec<HeaderInfo>, FetchError> {
         let mut new_headers: Vec<HeaderInfo> = Vec::new();
 
@@ -207,7 +209,7 @@ pub trait Node: Sync {
 
         for inactive_tip in tips
             .iter()
-            .filter(|tip| tip.height - tip.branchlen as u64 > min_fork_height)
+            .filter(|tip| tip.height - tip.branchlen as u64 > first_tracked_height)
             .filter(|tip| tip.status != ChainTipStatus::Active)
         {
             let mut next_header = inactive_tip.block_hash();

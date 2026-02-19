@@ -218,7 +218,7 @@ async fn main() -> Result<(), MainError> {
                     if last_tips != tips {
                         let (new_headers, miners_needed): (Vec<HeaderInfo>, Vec<BlockHash>) =
                             match node
-                                .new_headers(&tips, &tree_clone, network.min_fork_height)
+                                .new_headers(&tips, &tree_clone, network.first_tracked_height)
                                 .await
                             {
                                 Ok(headers) => headers,

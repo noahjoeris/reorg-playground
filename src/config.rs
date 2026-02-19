@@ -62,7 +62,7 @@ struct TomlNetwork {
     id: u32,
     name: String,
     description: String,
-    min_fork_height: u64,
+    first_tracked_height: u64,
     max_interesting_heights: usize,
     network_type: Option<NetworkType>,
     nodes: Vec<TomlNode>,
@@ -73,7 +73,7 @@ pub struct Network {
     pub id: u32,
     pub description: String,
     pub name: String,
-    pub min_fork_height: u64,
+    pub first_tracked_height: u64,
     pub max_interesting_heights: usize,
     pub network_type: Option<NetworkType>,
     pub nodes: Vec<BoxedSyncSendNode>,
@@ -83,11 +83,11 @@ impl fmt::Display for TomlNetwork {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Network (id={}, description='{}', name='{}', min_fork_height={}, max_interesting_heights={}, nodes={:?})",
+            "Network (id={}, description='{}', name='{}', first_tracked_height={}, max_interesting_heights={}, nodes={:?})",
             self.id,
             self.description,
             self.name,
-            self.min_fork_height,
+            self.first_tracked_height,
             self.max_interesting_heights,
             self.nodes,
         )
@@ -261,7 +261,7 @@ fn parse_toml_network(
         id: toml_network.id,
         name: toml_network.name.clone(),
         description: toml_network.description.clone(),
-        min_fork_height: toml_network.min_fork_height,
+        first_tracked_height: toml_network.first_tracked_height,
         max_interesting_heights: toml_network.max_interesting_heights,
         network_type: toml_network.network_type.clone(),
         nodes,
@@ -345,7 +345,7 @@ mod tests {
             id = 1
             name = ""
             description = ""
-            min_fork_height = 0
+            first_tracked_height = 0
             max_interesting_heights = 0
 
                 [[networks.nodes]]
@@ -388,7 +388,7 @@ mod tests {
             id = 1
             name = ""
             description = ""
-            min_fork_height = 0
+            first_tracked_height = 0
             max_interesting_heights = 0
 
                 [[networks.nodes]]
@@ -403,7 +403,7 @@ mod tests {
             id = 1
             name = ""
             description = ""
-            min_fork_height = 0
+            first_tracked_height = 0
             max_interesting_heights = 0
 
                 [[networks.nodes]]
@@ -437,7 +437,7 @@ mod tests {
             id = 1
             name = ""
             description = ""
-            min_fork_height = 0
+            first_tracked_height = 0
             max_interesting_heights = 0
 
                 [[networks.nodes]]
@@ -477,7 +477,7 @@ mod tests {
             id = 1
             name = ""
             description = ""
-            min_fork_height = 0
+            first_tracked_height = 0
             max_interesting_heights = 0
 
                 [[networks.nodes]]
