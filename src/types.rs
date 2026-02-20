@@ -4,6 +4,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use bitcoincore_rpc::bitcoin::hashes::hex::parse::HexToArrayError;
+
 use crate::config::Network;
 use crate::node::NodeInfo;
 
@@ -30,7 +32,10 @@ pub struct Cache {
 
 pub type NodeData = BTreeMap<u32, NodeDataJson>;
 pub type Caches = Arc<Mutex<BTreeMap<u32, Cache>>>;
-pub type TreeInfo = (DiGraph<HeaderInfo, bool>, HashMap<BlockHash, NodeIndex>);
+pub struct TreeInfo {
+    pub graph: DiGraph<HeaderInfo, bool>,
+    pub index: HashMap<BlockHash, NodeIndex>,
+}
 pub type Tree = Arc<Mutex<TreeInfo>>;
 pub type Db = Arc<Mutex<Connection>>;
 
@@ -152,7 +157,7 @@ pub struct NodeDataJson {
 impl NodeDataJson {
     pub fn new(
         info: NodeInfo,
-        tips: &Vec<ChainTip>,
+        tips: &[ChainTip],
         version: String,
         last_changed_timestamp: u64,
         reachable: bool,
@@ -268,8 +273,8 @@ impl From<GetChainTipsResultTip> for ChainTip {
 }
 
 impl ChainTip {
-    pub fn block_hash(&self) -> BlockHash {
-        BlockHash::from_str(&self.hash).unwrap()
+    pub fn block_hash(&self) -> Result<BlockHash, HexToArrayError> {
+        BlockHash::from_str(&self.hash)
     }
 }
 

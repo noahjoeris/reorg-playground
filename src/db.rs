@@ -49,7 +49,7 @@ pub async fn setup_db(db: Db) -> Result<(), DbError> {
 }
 
 pub async fn write_to_db(
-    new_headers: &Vec<HeaderInfo>,
+    new_headers: &[HeaderInfo],
     db: Db,
     network: u32,
 ) -> Result<(), DbError> {
@@ -97,22 +97,20 @@ pub async fn update_miner(db: Db, hash: &BlockHash, miner: String) -> Result<(),
 pub async fn load_treeinfos(db: Db, network: u32) -> Result<TreeInfo, DbError> {
     let header_infos = load_header_infos(db, network).await?;
 
-    let mut tree: DiGraph<HeaderInfo, bool> = DiGraph::new();
-    let mut hash_index_map: HashMap<BlockHash, NodeIndex> = HashMap::new();
+    let mut graph: DiGraph<HeaderInfo, bool> = DiGraph::new();
+    let mut index: HashMap<BlockHash, NodeIndex> = HashMap::new();
     info!("building header tree for network {}..", network);
-    // add headers as nodes
-    for h in header_infos.clone() {
-        let idx = tree.add_node(h.clone());
-        hash_index_map.insert(h.header.block_hash(), idx);
+    for h in header_infos.iter() {
+        let idx = graph.add_node(h.clone());
+        index.insert(h.header.block_hash(), idx);
     }
     info!(".. added headers from network {}", network);
-    // add prev-current block relationships as edges
     for current in header_infos {
-        let idx_current = hash_index_map
+        let idx_current = index
             .get(&current.header.block_hash())
-            .expect("current header should be in the map as we just inserted it");
-        match hash_index_map.get(&current.header.prev_blockhash) {
-            Some(idx_prev) => tree.update_edge(*idx_prev, *idx_current, false),
+            .expect("header was just inserted");
+        match index.get(&current.header.prev_blockhash) {
+            Some(idx_prev) => graph.update_edge(*idx_prev, *idx_current, false),
             None => continue,
         };
     }
@@ -120,12 +118,12 @@ pub async fn load_treeinfos(db: Db, network: u32) -> Result<TreeInfo, DbError> {
         ".. added relationships between headers from network {}",
         network
     );
-    let root_nodes = tree.externals(petgraph::Direction::Incoming).count();
+    let root_nodes = graph.externals(petgraph::Direction::Incoming).count();
     info!(
         "done building header tree for network {}: roots={}, tips={}",
         network,
-        root_nodes,                                            // root nodes
-        tree.externals(petgraph::Direction::Outgoing).count(), // tip nodes
+        root_nodes,
+        graph.externals(petgraph::Direction::Outgoing).count(),
     );
     if root_nodes > 1 {
         warn!(
@@ -133,7 +131,7 @@ pub async fn load_treeinfos(db: Db, network: u32) -> Result<TreeInfo, DbError> {
             network, root_nodes
         );
     }
-    Ok((tree, hash_index_map))
+    Ok(TreeInfo { graph, index })
 }
 
 async fn load_header_infos(db: Db, network: u32) -> Result<Vec<HeaderInfo>, DbError> {

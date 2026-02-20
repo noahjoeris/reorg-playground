@@ -60,7 +60,7 @@ pub trait Node: Sync {
 
     async fn new_headers(
         &self,
-        tips: &Vec<ChainTip>,
+        tips: &[ChainTip],
         tree: &Tree,
         first_tracked_height: u64,
     ) -> Result<(Vec<HeaderInfo>, Vec<BlockHash>), FetchError> {
@@ -91,7 +91,7 @@ pub trait Node: Sync {
 
     async fn new_active_headers(
         &self,
-        tips: &Vec<ChainTip>,
+        tips: &[ChainTip],
         tree: &Tree,
         first_tracked_height: u64,
     ) -> Result<Vec<HeaderInfo>, FetchError> {
@@ -136,7 +136,7 @@ pub trait Node: Sync {
                     {
                         let locked_tree = tree.lock().await;
                         if !locked_tree
-                            .1
+                            .index
                             .contains_key(&height_header_pair.0.block_hash())
                         {
                             new_headers.push(HeaderInfo {
@@ -160,7 +160,7 @@ pub trait Node: Sync {
                     let header_hash = self.block_hash(query_height as u64).await?;
                     {
                         let locked_tree = tree.lock().await;
-                        if locked_tree.1.contains_key(&header_hash) {
+                        if locked_tree.index.contains_key(&header_hash) {
                             break;
                         }
                     }
@@ -194,7 +194,7 @@ pub trait Node: Sync {
 
     async fn new_nonactive_headers(
         &self,
-        tips: &Vec<ChainTip>,
+        tips: &[ChainTip],
         tree: &Tree,
         first_tracked_height: u64,
     ) -> Result<Vec<HeaderInfo>, FetchError> {
@@ -212,11 +212,14 @@ pub trait Node: Sync {
             .filter(|tip| tip.height - tip.branchlen as u64 > first_tracked_height)
             .filter(|tip| tip.status != ChainTipStatus::Active)
         {
-            let mut next_header = inactive_tip.block_hash();
+            let tip_hash = inactive_tip.block_hash().map_err(|e| {
+                FetchError::DataError(format!("Invalid block hash '{}': {}", inactive_tip.hash, e))
+            })?;
+            let mut next_header = tip_hash;
             for i in 0..=inactive_tip.branchlen {
                 {
                     let tree_locked = tree.lock().await;
-                    if tree_locked.1.contains_key(&inactive_tip.block_hash()) {
+                    if tree_locked.index.contains_key(&tip_hash) {
                         break;
                     }
                 }
@@ -343,22 +346,19 @@ impl Node for BitcoinCoreNode {
     }
 
     async fn block_header_height(&self, _: u64) -> Result<Header, FetchError> {
-        assert_eq!(self.capabilities().header_fetch_type, HeaderFetchType::Hash);
         Err(FetchError::DataError(
-            "fetch by block height not implemented".to_string(),
+            "BitcoinCoreNode: fetch by block height not supported".to_string(),
         ))
     }
 
     async fn coinbase(&self, hash: &BlockHash, _height: u64) -> Result<Transaction, FetchError> {
         let rpc = self.rpc_client()?;
-        let hash_clone = hash.clone();
+        let hash_clone = *hash;
         match task::spawn_blocking(move || rpc.get_block(&hash_clone)).await {
             Ok(result) => match result {
-                Ok(result) => Ok(result
-                    .txdata
-                    .first()
-                    .expect("Block should have a coinbase transaction")
-                    .clone()),
+                Ok(block) => block.txdata.into_iter().next().ok_or_else(|| {
+                    FetchError::DataError(format!("Block {} has no transactions", hash))
+                }),
                 Err(e) => Err(e.into()),
             },
             Err(e) => Err(e.into()),
@@ -478,21 +478,13 @@ impl Node for BtcdNode {
 
     async fn block_header_hash(&self, hash: &BlockHash) -> Result<Header, FetchError> {
         let url = format!("http://{}/", self.rpc_url);
-        match crate::jsonrpc::btcd_blockheader(
-            url,
-            self.rpc_user.clone(),
-            self.rpc_password.clone(),
-            hash.to_string(),
-        ) {
-            Ok(header) => Ok(header),
-            Err(error) => Err(FetchError::BtcdRPC(error)),
-        }
+        crate::jsonrpc::btcd_blockheader(&url, &self.rpc_user, &self.rpc_password, &hash.to_string())
+            .map_err(FetchError::BtcdRPC)
     }
 
     async fn block_header_height(&self, _: u64) -> Result<Header, FetchError> {
-        assert_eq!(self.capabilities().header_fetch_type, HeaderFetchType::Hash);
         Err(FetchError::DataError(
-            "fetch by block height not implemented".to_string(),
+            "BtcdNode: fetch by block height not supported".to_string(),
         ))
     }
 
@@ -502,49 +494,30 @@ impl Node for BtcdNode {
         _start_height: u64,
         _count: u64,
     ) -> Result<Vec<Header>, FetchError> {
-        assert!(self.capabilities().batch_header_fetch);
         Err(FetchError::DataError(
-            "batch header fetch not implemented".to_string(),
+            "BtcdNode: batch header fetch not supported".to_string(),
         ))
     }
 
     async fn coinbase(&self, hash: &BlockHash, _height: u64) -> Result<Transaction, FetchError> {
         let url = format!("http://{}/", self.rpc_url);
-        match crate::jsonrpc::btcd_block(
-            url,
-            self.rpc_user.clone(),
-            self.rpc_password.clone(),
-            hash.to_string(),
-        ) {
-            Ok(block) => Ok(block
-                .txdata
-                .first()
-                .expect("Block should have a coinbase transaction")
-                .clone()),
-            Err(error) => Err(FetchError::BtcdRPC(error)),
-        }
+        let block = crate::jsonrpc::btcd_block(&url, &self.rpc_user, &self.rpc_password, &hash.to_string())
+            .map_err(FetchError::BtcdRPC)?;
+        block.txdata.into_iter().next().ok_or_else(|| {
+            FetchError::DataError(format!("Block {} has no transactions", hash))
+        })
     }
 
     async fn block_hash(&self, height: u64) -> Result<BlockHash, FetchError> {
         let url = format!("http://{}/", self.rpc_url);
-        match crate::jsonrpc::btcd_blockhash(
-            url,
-            self.rpc_user.clone(),
-            self.rpc_password.clone(),
-            height,
-        ) {
-            Ok(tips) => Ok(tips),
-            Err(error) => Err(FetchError::BtcdRPC(error)),
-        }
+        crate::jsonrpc::btcd_blockhash(&url, &self.rpc_user, &self.rpc_password, height)
+            .map_err(FetchError::BtcdRPC)
     }
 
     async fn tips(&self) -> Result<Vec<ChainTip>, FetchError> {
         let url = format!("http://{}/", self.rpc_url);
-        match crate::jsonrpc::btcd_chaintips(url, self.rpc_user.clone(), self.rpc_password.clone())
-        {
-            Ok(tips) => Ok(tips),
-            Err(error) => Err(FetchError::BtcdRPC(error)),
-        }
+        crate::jsonrpc::btcd_chaintips(&url, &self.rpc_user, &self.rpc_password)
+            .map_err(FetchError::BtcdRPC)
     }
 }
 
@@ -619,9 +592,8 @@ impl Node for Esplora {
     }
 
     async fn block_header_height(&self, _: u64) -> Result<Header, FetchError> {
-        assert_eq!(self.capabilities().header_fetch_type, HeaderFetchType::Hash);
         Err(FetchError::DataError(
-            "fetch by block height not implemented".to_string(),
+            "Esplora: fetch by block height not supported".to_string(),
         ))
     }
 
@@ -718,9 +690,8 @@ impl Node for Esplora {
         _start_height: u64,
         _count: u64,
     ) -> Result<Vec<Header>, FetchError> {
-        assert!(self.capabilities().batch_header_fetch);
         Err(FetchError::DataError(
-            "batch header fetch not implemented".to_string(),
+            "Esplora: batch header fetch not supported".to_string(),
         ))
     }
 

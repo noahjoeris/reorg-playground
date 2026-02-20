@@ -72,39 +72,37 @@ impl<T> Response<T> {
 }
 
 pub fn btcd_chaintips(
-    url: String,
-    user: String,
-    password: String,
+    url: &str,
+    user: &str,
+    password: &str,
 ) -> Result<Vec<ChainTip>, JsonRPCError> {
     const METHOD: &str = "getchaintips";
 
-    let res = request(METHOD.to_string(), vec![], url, user, password)?;
+    let res = request(METHOD, vec![], url, user, password)?;
     let jsonrpc_response: Response<Vec<ChainTip>> = res.json()?;
     if let Some(e) = jsonrpc_response.check(METHOD) {
         return Err(e);
     }
 
-    if let Some(response) = jsonrpc_response.result {
-        return Ok(response);
-    } else {
-        return Err(JsonRPCError::JsonRpc(format!(
+    jsonrpc_response.result.ok_or_else(|| {
+        JsonRPCError::JsonRpc(format!(
             "JSON RPC response for request '{}' was empty.",
             METHOD
-        )));
-    }
+        ))
+    })
 }
 
 pub fn btcd_blockheader(
-    url: String,
-    user: String,
-    password: String,
-    hash: String,
+    url: &str,
+    user: &str,
+    password: &str,
+    hash: &str,
 ) -> Result<Header, JsonRPCError> {
     const METHOD: &str = "getblockheader";
     const PARAM_VERBOSE: bool = false;
 
     let res = request(
-        METHOD.to_string(),
+        METHOD,
         vec![Value::from(hash), Value::from(PARAM_VERBOSE)],
         url,
         user,
@@ -125,22 +123,21 @@ pub fn btcd_blockheader(
     }
 
     let header_bytes = hex::decode(header_hex)?;
-
     let header: Header = bitcoin::consensus::deserialize(&header_bytes)?;
-    return Ok(header);
+    Ok(header)
 }
 
 pub fn btcd_block(
-    url: String,
-    user: String,
-    password: String,
-    hash: String,
+    url: &str,
+    user: &str,
+    password: &str,
+    hash: &str,
 ) -> Result<Block, JsonRPCError> {
     const METHOD: &str = "getblock";
-    const PARAM_VERBOSE: i8 = 0; // requests the raw block
+    const PARAM_VERBOSE: i8 = 0;
 
     let res = request(
-        METHOD.to_string(),
+        METHOD,
         vec![Value::from(hash), Value::from(PARAM_VERBOSE)],
         url,
         user,
@@ -158,20 +155,14 @@ pub fn btcd_block(
 }
 
 pub fn btcd_blockhash(
-    url: String,
-    user: String,
-    password: String,
+    url: &str,
+    user: &str,
+    password: &str,
     height: u64,
 ) -> Result<bitcoin::BlockHash, JsonRPCError> {
     const METHOD: &str = "getblockhash";
 
-    let res = request(
-        METHOD.to_string(),
-        vec![Value::from(height)],
-        url,
-        user,
-        password,
-    )?;
+    let res = request(METHOD, vec![Value::from(height)], url, user, password)?;
     let jsonrpc_response: Response<String> = res.json()?;
     if let Some(e) = jsonrpc_response.check(METHOD) {
         return Err(e);
@@ -182,7 +173,7 @@ pub fn btcd_blockhash(
     if hash_hex.len() != BITCOIN_BLOCK_HASH_HEX_LENGTH {
         return Err(JsonRPCError::RpcUnexpectedResponseContents(format!(
             "JSON RPC response for request '{}' has not the correct length for a Bitcoin block hash. Expected {} hex chars but got {} chars. Content: {}",
-            METHOD, BITCOIN_BLOCK_HEADER_HEX_LENGTH, hash_hex.len(), hash_hex
+            METHOD, BITCOIN_BLOCK_HASH_HEX_LENGTH, hash_hex.len(), hash_hex
         )));
     }
 
@@ -190,16 +181,16 @@ pub fn btcd_blockhash(
 }
 
 fn request(
-    method: String,
+    method: &str,
     params: Vec<Value>,
-    url: String,
-    user: String,
-    password: String,
+    url: &str,
+    user: &str,
+    password: &str,
 ) -> Result<minreq::Response, JsonRPCError> {
     let jsonrpc_request = Request {
         jsonrpc: String::from(JSON_RPC_VERSION),
         id: JSON_RPC_ID,
-        method: method.clone(),
+        method: method.to_string(),
         params,
     };
 
@@ -210,7 +201,7 @@ fn request(
         user, jsonrpc_request
     );
 
-    let res = minreq::post(url.clone())
+    let res = minreq::post(url)
         .with_header(
             "Authorization",
             format!("Basic {}", BASE64_STANDARD.encode(&token)),

@@ -207,6 +207,7 @@ pub enum MainError {
     Db(DbError),
     Fetch(FetchError),
     Config(ConfigError),
+    Io(io::Error),
 }
 
 impl fmt::Display for MainError {
@@ -215,6 +216,7 @@ impl fmt::Display for MainError {
             MainError::Db(e) => write!(f, "database error: {:?}", e),
             MainError::Fetch(e) => write!(f, "fetch error: {:?}", e),
             MainError::Config(e) => write!(f, "config error: {:?}", e),
+            MainError::Io(e) => write!(f, "IO error: {}", e),
         }
     }
 }
@@ -225,6 +227,7 @@ impl error::Error for MainError {
             MainError::Db(ref e) => Some(e),
             MainError::Fetch(ref e) => Some(e),
             MainError::Config(ref e) => Some(e),
+            MainError::Io(ref e) => Some(e),
         }
     }
 }

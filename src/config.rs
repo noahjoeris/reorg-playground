@@ -166,14 +166,13 @@ impl fmt::Display for Backend {
 }
 
 fn parse_rpc_auth(node_config: &TomlNode) -> Result<Auth, ConfigError> {
-    if node_config.rpc_cookie_file.is_some() {
-        if let Some(rpc_cookie_file) = node_config.rpc_cookie_file.clone() {
-            if !rpc_cookie_file.exists() {
-                return Err(ConfigError::CookieFileDoesNotExist);
-            }
-            return Ok(Auth::CookieFile(rpc_cookie_file));
+    if let Some(rpc_cookie_file) = node_config.rpc_cookie_file.clone() {
+        if !rpc_cookie_file.exists() {
+            return Err(ConfigError::CookieFileDoesNotExist);
         }
-    } else if let (Some(user), Some(password)) = (
+        return Ok(Auth::CookieFile(rpc_cookie_file));
+    }
+    if let (Some(user), Some(password)) = (
         node_config.rpc_user.clone(),
         node_config.rpc_password.clone(),
     ) {
@@ -318,8 +317,8 @@ fn parse_toml_node(toml_node: &TomlNode) -> Result<BoxedSyncSendNode, ConfigErro
         Backend::Electrum => {
             let url = format!(
                 "{}:{}",
-                toml_node.rpc_host.clone(),
-                toml_node.rpc_port.clone().unwrap_or(50002).to_string()
+                toml_node.rpc_host,
+                toml_node.rpc_port.unwrap_or(50002)
             );
             Arc::new(Electrum::new(node_info, url))
         }
