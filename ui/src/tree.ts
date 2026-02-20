@@ -1,8 +1,25 @@
-import type { Edge } from '@xyflow/react'
-import { MarkerType } from '@xyflow/react'
+import { MarkerType, type Edge } from '@xyflow/react'
 import type { BlockNodeType } from './BlockNode'
-import type { DataResponse, ProcessedBlock, TipStatusEntry } from './types'
-import { MAX_PREV_ID, type TipStatus } from './types'
+import { MAX_PREV_ID, type DataResponse, type ProcessedBlock, type TipStatus, type TipStatusEntry } from './types'
+
+const H_GAP = 270
+const V_GAP = 120
+
+const TIP_STATUS_ORDER: Record<TipStatus, number> = {
+  active: 0,
+  'valid-fork': 1,
+  'valid-headers': 2,
+  'headers-only': 3,
+  invalid: 4,
+  unknown: 5,
+}
+
+function compareBlocks(a: ProcessedBlock, b: ProcessedBlock): number {
+  if (a.height !== b.height) return a.height - b.height
+  const hashCompare = a.hash.localeCompare(b.hash)
+  if (hashCompare !== 0) return hashCompare
+  return a.id - b.id
+}
 
 /**
  * Annotate each block with aggregated tip status info from all nodes,
@@ -10,54 +27,62 @@ import { MAX_PREV_ID, type TipStatus } from './types'
  */
 export function preprocessData(data: DataResponse): ProcessedBlock[] {
   const blockMap = new Map<number, ProcessedBlock>()
+  const hashToBlockId = new Map<string, number>()
 
-  // Initialize all blocks
-  for (const h of data.header_infos) {
-    blockMap.set(h.id, {
-      ...h,
+  for (const header of data.header_infos) {
+    blockMap.set(header.id, {
+      ...header,
       tipStatuses: [],
       children: [],
     })
+    hashToBlockId.set(header.hash, header.id)
   }
 
-  // Aggregate tip statuses per block from all nodes
-  const tipAgg = new Map<string, Map<TipStatus, string[]>>()
+  const tipAgg = new Map<number, Map<TipStatus, Set<string>>>()
   for (const node of data.nodes) {
     for (const tip of node.tips) {
-      // Find the block by hash
-      const block = data.header_infos.find(h => h.hash === tip.hash)
-      if (!block) continue
-      const key = String(block.id)
-      if (!tipAgg.has(key)) tipAgg.set(key, new Map())
-      const statusMap = tipAgg.get(key)!
-      if (!statusMap.has(tip.status)) statusMap.set(tip.status, [])
-      statusMap.get(tip.status)!.push(node.name)
+      const blockId = hashToBlockId.get(tip.hash)
+      if (blockId === undefined) continue
+
+      if (!tipAgg.has(blockId)) {
+        tipAgg.set(blockId, new Map())
+      }
+
+      const statusMap = tipAgg.get(blockId)
+      if (!statusMap) continue
+
+      if (!statusMap.has(tip.status)) {
+        statusMap.set(tip.status, new Set())
+      }
+
+      statusMap.get(tip.status)?.add(node.name)
     }
   }
 
-  for (const [blockIdStr, statusMap] of tipAgg) {
-    const block = blockMap.get(Number(blockIdStr))
+  for (const [blockId, statusMap] of tipAgg) {
+    const block = blockMap.get(blockId)
     if (!block) continue
-    const entries: TipStatusEntry[] = []
-    for (const [status, nodeNames] of statusMap) {
-      entries.push({ status, nodeNames })
-    }
+
+    const entries: TipStatusEntry[] = [...statusMap.entries()]
+      .sort((a, b) => TIP_STATUS_ORDER[a[0]] - TIP_STATUS_ORDER[b[0]])
+      .map(([status, nodeNames]) => ({
+        status,
+        nodeNames: [...nodeNames].sort((a, b) => a.localeCompare(b)),
+      }))
+
     block.tipStatuses = entries
   }
 
-  // Build children links
   for (const block of blockMap.values()) {
-    if (block.prev_id !== MAX_PREV_ID) {
-      const parent = blockMap.get(block.prev_id)
-      if (parent) parent.children.push(block.id)
+    if (block.prev_id === MAX_PREV_ID) continue
+    const parent = blockMap.get(block.prev_id)
+    if (parent) {
+      parent.children.push(block.id)
     }
   }
 
-  return [...blockMap.values()]
+  return [...blockMap.values()].sort(compareBlocks)
 }
-
-const H_GAP = 250
-const V_GAP = 100
 
 /**
  * Convert processed blocks into React Flow nodes and edges.
@@ -65,79 +90,140 @@ const V_GAP = 100
 export function buildReactFlowGraph(
   blocks: ProcessedBlock[],
   onBlockClick: (block: ProcessedBlock) => void,
+  selectedBlockId: number | null = null,
 ): { nodes: BlockNodeType[]; edges: Edge[] } {
   const blockMap = new Map<number, ProcessedBlock>()
-  for (const b of blocks) blockMap.set(b.id, b)
+  for (const block of blocks) {
+    blockMap.set(block.id, block)
+  }
 
-  // Rebuild children map for this subset
   const childrenMap = new Map<number, number[]>()
-  for (const b of blocks) {
-    if (b.prev_id !== MAX_PREV_ID && blockMap.has(b.prev_id)) {
-      const siblings = childrenMap.get(b.prev_id) || []
-      siblings.push(b.id)
-      childrenMap.set(b.prev_id, siblings)
+  for (const block of blocks) {
+    if (block.prev_id === MAX_PREV_ID || !blockMap.has(block.prev_id)) continue
+
+    if (!childrenMap.has(block.prev_id)) {
+      childrenMap.set(block.prev_id, [])
     }
+
+    childrenMap.get(block.prev_id)?.push(block.id)
   }
 
-  // Assign positions using recursive tree layout
-  let leafIndex = 0
-  const positions = new Map<number, { x: number; y: number }>()
+  for (const childIds of childrenMap.values()) {
+    childIds.sort((idA, idB) => {
+      const blockA = blockMap.get(idA)
+      const blockB = blockMap.get(idB)
+      if (!blockA || !blockB) return 0
+      return compareBlocks(blockA, blockB)
+    })
+  }
 
-  // Build a height-to-depth mapping for consistent horizontal spacing
-  const heights = [...new Set(blocks.map(b => b.height))].sort((a, b) => a - b)
+  const heights = [...new Set(blocks.map(block => block.height))].sort((a, b) => a - b)
   const heightToDepth = new Map<number, number>()
-  for (let i = 0; i < heights.length; i++) {
-    heightToDepth.set(heights[i], i)
+  for (let index = 0; index < heights.length; index++) {
+    const height = heights[index]
+    if (height !== undefined) {
+      heightToDepth.set(height, index)
+    }
   }
 
-  function assign(blockId: number): number {
-    const block = blockMap.get(blockId)!
-    const depth = heightToDepth.get(block.height) ?? 0
-    const children = childrenMap.get(blockId) || []
+  let leafCursor = 0
+  const visiting = new Set<number>()
+  const slotById = new Map<number, number>()
 
-    if (children.length === 0) {
-      const idx = leafIndex++
-      positions.set(blockId, { x: depth * H_GAP, y: idx * V_GAP })
-      return idx
+  function assignSlot(blockId: number): number {
+    const existingSlot = slotById.get(blockId)
+    if (existingSlot !== undefined) return existingSlot
+
+    // Defensive fallback for malformed graphs.
+    if (visiting.has(blockId)) {
+      const fallbackSlot = leafCursor++
+      slotById.set(blockId, fallbackSlot)
+      return fallbackSlot
     }
 
-    const childIdxs = children.map(c => assign(c))
-    const mid = (childIdxs[0] + childIdxs[childIdxs.length - 1]) / 2
-    positions.set(blockId, { x: depth * H_GAP, y: mid * V_GAP })
-    return mid
+    const block = blockMap.get(blockId)
+    if (!block) {
+      const fallbackSlot = leafCursor++
+      slotById.set(blockId, fallbackSlot)
+      return fallbackSlot
+    }
+
+    visiting.add(blockId)
+
+    const children = (childrenMap.get(blockId) ?? []).filter(childId => blockMap.has(childId))
+    if (children.length === 0) {
+      const slot = leafCursor++
+      slotById.set(blockId, slot)
+      visiting.delete(blockId)
+      return slot
+    }
+
+    const childSlots = children.map(assignSlot)
+    const minChildSlot = Math.min(...childSlots)
+    const maxChildSlot = Math.max(...childSlots)
+    const slot = (minChildSlot + maxChildSlot) / 2
+
+    slotById.set(blockId, slot)
+    visiting.delete(blockId)
+    return slot
   }
 
-  // Find roots and assign positions
-  const roots = blocks.filter(b => b.prev_id === MAX_PREV_ID || !blockMap.has(b.prev_id))
-  for (const root of roots) {
-    if (!positions.has(root.id)) assign(root.id)
+  const roots = blocks
+    .filter(block => block.prev_id === MAX_PREV_ID || !blockMap.has(block.prev_id))
+    .sort(compareBlocks)
+
+  roots.forEach((root, index) => {
+    if (index > 0) {
+      leafCursor += 1
+    }
+    assignSlot(root.id)
+  })
+
+  // Handle disconnected leftovers if any (defensive).
+  for (const block of blocks) {
+    if (slotById.has(block.id)) continue
+    leafCursor += 1
+    assignSlot(block.id)
   }
 
-  // Build nodes
-  const nodes: BlockNodeType[] = blocks.map(block => ({
-    id: String(block.id),
-    type: 'block' as const,
-    position: positions.get(block.id) ?? { x: 0, y: 0 },
-    data: {
-      height: block.height,
-      hash: block.hash,
-      miner: block.miner,
-      tipStatuses: block.tipStatuses,
-      difficultyInt: block.difficulty_int,
-      onBlockClick: () => onBlockClick(block),
-    },
-  }))
+  const nodes: BlockNodeType[] = blocks.map(block => {
+    const depth = heightToDepth.get(block.height) ?? 0
+    const slot = slotById.get(block.id) ?? 0
 
-  // Build edges
+    return {
+      id: String(block.id),
+      type: 'block' as const,
+      position: { x: depth * H_GAP, y: slot * V_GAP },
+      selected: selectedBlockId === block.id,
+      data: {
+        height: block.height,
+        hash: block.hash,
+        miner: block.miner,
+        tipStatuses: block.tipStatuses,
+        difficultyInt: block.difficulty_int,
+        onBlockClick: () => onBlockClick(block),
+      },
+    }
+  })
+
   const edges: Edge[] = blocks
-    .filter(b => b.prev_id !== MAX_PREV_ID && blockMap.has(b.prev_id))
-    .map(b => ({
-      id: `${b.prev_id}-${b.id}`,
-      source: String(b.prev_id),
-      target: String(b.id),
-      type: 'smoothstep',
-      markerEnd: { type: MarkerType.ArrowClosed },
-    }))
+    .filter(block => block.prev_id !== MAX_PREV_ID && blockMap.has(block.prev_id))
+    .map(block => {
+      const highlightsSelected =
+        selectedBlockId !== null && (selectedBlockId === block.id || selectedBlockId === block.prev_id)
+
+      return {
+        id: `${block.prev_id}-${block.id}`,
+        source: String(block.prev_id),
+        target: String(block.id),
+        type: 'smoothstep',
+        markerEnd: { type: MarkerType.ArrowClosed },
+        style: {
+          stroke: highlightsSelected ? 'var(--accent)' : 'var(--border)',
+          strokeWidth: highlightsSelected ? 2 : 1.5,
+        },
+      }
+    })
 
   return { nodes, edges }
 }

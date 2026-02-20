@@ -4,7 +4,15 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ui</title>
+    <title>Reorg Playground</title>
+    <script>
+      // Apply theme before first paint so no flash (saved preference or system).
+      ;(function () {
+        var t = localStorage.getItem('theme')
+        document.documentElement.setAttribute('data-theme',
+          t === 'dark' || t === 'light' ? t : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'))
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

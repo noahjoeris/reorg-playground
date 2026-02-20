@@ -1,7 +1,10 @@
 @import "tailwindcss";
 
+/* Manual dark toggle: dark: utilities apply when data-theme="dark" on <html>. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
 /* =====================================================================
-   Theme
+   Theme tokens
    ===================================================================== */
 
 @theme {
@@ -22,7 +25,7 @@
   --color-primary-900: oklch(0.307 0.115 264);
   --color-primary-950: oklch(0.208 0.083 264);
 
-  /* --- Semantic tokens (swap automatically in dark mode via CSS vars) --- */
+  /* --- Semantic tokens (resolved via CSS vars set below) --- */
   --color-background:        var(--background);
   --color-foreground:        var(--foreground);
   --color-muted:             var(--muted);
@@ -41,11 +44,11 @@
 }
 
 /* =====================================================================
-   Light mode
+   Light mode (default)
    ===================================================================== */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -61,19 +64,19 @@
 }
 
 /* =====================================================================
-   Dark mode
+   Dark mode — explicit user choice
    ===================================================================== */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background:        oklch(0.090 0.008 250);
-    --foreground:        oklch(0.985 0.003 250);
-    --muted:             oklch(0.145 0.012 250);
-    --muted-foreground:  oklch(0.620 0.016 250);
-    --border:            oklch(0.220 0.014 250);
-    --accent:            var(--color-primary-400);
-    --accent-foreground: oklch(0.090 0.008 250);
-  }
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --background:        oklch(0.090 0.008 250);
+  --foreground:        oklch(0.985 0.003 250);
+  --muted:             oklch(0.145 0.012 250);
+  --muted-foreground:  oklch(0.620 0.016 250);
+  --border:            oklch(0.220 0.014 250);
+  --accent:            var(--color-primary-400);
+  --accent-foreground: oklch(0.090 0.008 250);
 }
 
 /* =====================================================================
@@ -96,4 +99,3 @@ a {
   color: var(--accent);
   text-decoration: inherit;
 }
-
