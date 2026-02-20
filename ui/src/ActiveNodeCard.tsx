@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import type { NodeInfo, TipStatus } from './types'
+import { type NodeInfo, TIP_STATUS_COLORS, type TipStatus } from './types'
 import { shortHash } from './utils'
 
 const RELATIVE_TIME_REFRESH_MS = 10_000
+const panelGlassClass =
+  '[background:var(--surface-panel)] border border-border/70 shadow-[var(--elevation-soft)] backdrop-blur-[10px]'
 
 const TIP_STATUS_LABELS: Record<TipStatus, string> = {
   active: 'Active',
@@ -49,16 +51,16 @@ function ReachabilityBadge({ reachable }: { reachable: boolean }) {
     <Badge
       variant={reachable ? 'secondary' : 'destructive'}
       className={[
-        'ml-auto inline-flex max-w-full items-center gap-1.5 px-2 py-0.5 text-[11px]',
+        'ml-auto inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold',
         reachable
-          ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-          : 'border-red-500/35 bg-red-500/10 text-red-600 dark:text-red-400',
+          ? 'border-success/40 bg-success/12 text-success'
+          : 'border-destructive/40 bg-destructive/12 text-destructive',
       ].join(' ')}
     >
       <span
         className={[
-          'h-1.5 w-1.5 shrink-0 rounded-full',
-          reachable ? 'bg-emerald-500' : 'bg-red-500',
+          "relative h-1.5 w-1.5 shrink-0 rounded-full after:pointer-events-none after:absolute after:inset-[-0.22rem] after:rounded-full after:bg-current after:opacity-25 after:blur-[6px] after:content-['']",
+          reachable ? 'bg-success' : 'bg-destructive',
         ].join(' ')}
         aria-hidden="true"
       />
@@ -69,9 +71,9 @@ function ReachabilityBadge({ reachable }: { reachable: boolean }) {
 
 function NodeMetric({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="min-w-0">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-0.5 truncate font-mono text-sm text-foreground">{value}</p>
+    <div className="min-w-0 rounded-xl border border-border/75 bg-background/55 px-2.5 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+      <p className="mt-1 truncate font-mono text-sm font-semibold text-foreground">{value}</p>
     </div>
   )
 }
@@ -98,8 +100,8 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
 
   if (sortedNodes.length === 0) {
     return (
-      <section className="border-b border-border/80 px-4 py-3 sm:px-6" aria-label="Node health panel">
-        <Card className="gap-0 border-dashed py-0">
+      <section className="px-4 pb-2 sm:px-6" aria-label="Node health panel">
+        <Card className={`${panelGlassClass} gap-0 rounded-2xl border-dashed py-0`}>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">No node status data yet.</p>
           </CardContent>
@@ -109,8 +111,8 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
   }
 
   return (
-    <section className="border-b border-border/80 px-4 py-3 sm:px-6" aria-label="Node health panel">
-      <div className="flex gap-3 overflow-x-auto pb-1">
+    <section className="px-4 pb-2 sm:px-6" aria-label="Node health panel">
+      <div className="flex gap-3 overflow-x-auto pb-2">
         {sortedNodes.map(node => {
           const currentActiveTip = activeTip(node)
           const activeHeight = currentActiveTip?.height ?? 0
@@ -123,8 +125,10 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
             <Card
               key={node.id}
               className={[
-                'min-w-72 shrink-0 gap-0 py-0 transition-colors',
-                !node.reachable && 'border-red-400/40 bg-red-500/5',
+                `${panelGlassClass} min-w-[19rem] shrink-0 gap-0 rounded-2xl py-0`,
+                'transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5',
+                'hover:border-accent/35 hover:shadow-[var(--elevation-lift)]',
+                !node.reachable && 'border-destructive/40 bg-destructive/8',
               ]
                 .filter(Boolean)
                 .join(' ')}
@@ -133,10 +137,10 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
               <CardHeader className="gap-2 px-4 pt-4 pb-0">
                 <div className="flex flex-wrap items-start gap-2">
                   <div className="min-w-0 flex-1">
-                    <CardTitle className="truncate text-sm" title={node.name}>
+                    <CardTitle className="truncate text-sm tracking-tight" title={node.name}>
                       {node.name}
                     </CardTitle>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground" title={node.description}>
+                    <p className="mt-0.5 truncate text-xs font-medium text-muted-foreground" title={node.description}>
                       {node.description || 'No description'}
                     </p>
                   </div>
@@ -144,11 +148,14 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge variant="outline" className="font-normal text-muted-foreground">
+                  <Badge variant="outline" className="rounded-full bg-background/65 font-normal text-muted-foreground">
                     {node.implementation}
                   </Badge>
                   {node.version && (
-                    <Badge variant="outline" className="max-w-full truncate font-mono font-normal text-muted-foreground">
+                    <Badge
+                      variant="outline"
+                      className="max-w-full truncate rounded-full bg-background/65 font-mono font-normal text-muted-foreground"
+                    >
                       {node.version}
                     </Badge>
                   )}
@@ -156,22 +163,22 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
               </CardHeader>
 
               <CardContent className="space-y-3 px-4 py-3">
-                <dl className="grid grid-cols-3 gap-3 border-y border-border/70 py-2">
+                <dl className="grid grid-cols-3 gap-2 border-y border-border/70 py-2">
                   <NodeMetric label="Height" value={activeHeight || 'N/A'} />
                   <NodeMetric label="Lag" value={lag} />
                   <NodeMetric label="Tips" value={node.tips.length} />
                 </dl>
 
                 <div>
-                  <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                  <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
                     <span>Chain progress</span>
-                    <span>{progress}%</span>
+                    <span className="font-semibold">{progress}%</span>
                   </div>
-                  <div className="h-1.5 rounded-full bg-muted">
+                  <div className="h-2 rounded-full border border-border/70 bg-muted/80 p-[1px]">
                     <div
                       className={[
-                        'h-1.5 rounded-full transition-all duration-300',
-                        node.reachable ? 'bg-accent' : 'bg-red-500/60',
+                        'h-full rounded-full transition-all duration-300',
+                        node.reachable ? 'bg-accent' : 'bg-destructive/70',
                       ].join(' ')}
                       style={{ width: `${progress}%` }}
                     />
@@ -181,7 +188,7 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
                 <div className="flex items-center justify-between gap-2">
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <p className="truncate font-mono text-[11px] text-muted-foreground">
+                      <p className="truncate rounded-md border border-border/70 bg-background/60 px-2 py-1 font-mono text-[11px] text-muted-foreground">
                         {activeHash ? shortHash(activeHash, 8, 8) : 'No active tip'}
                       </p>
                     </TooltipTrigger>
@@ -189,7 +196,7 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
                   </Tooltip>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <p className="shrink-0 text-[11px] text-muted-foreground">
+                      <p className="shrink-0 rounded-md border border-border/70 bg-background/60 px-2 py-1 text-[11px] text-muted-foreground">
                         {relativeTime(node.last_changed_timestamp)}
                       </p>
                     </TooltipTrigger>
@@ -201,8 +208,17 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
                   <ul className="flex flex-wrap gap-1.5">
                     {statusSummary.map(([status, count]) => (
                       <li key={status}>
-                        <Badge variant="outline" className="font-normal text-muted-foreground">
-                          {TIP_STATUS_LABELS[status]} {count}
+                        <Badge
+                          variant="outline"
+                          className="inline-flex items-center gap-1.5 rounded-full bg-background/65 font-normal text-muted-foreground"
+                        >
+                          <span
+                            className="h-1.5 w-1.5 rounded-full ring-1 ring-background/70"
+                            style={{ backgroundColor: TIP_STATUS_COLORS[status] }}
+                            aria-hidden="true"
+                          />
+                          {TIP_STATUS_LABELS[status]}
+                          <span className="rounded-full bg-muted px-1 text-[10px]">{count}</span>
                         </Badge>
                       </li>
                     ))}

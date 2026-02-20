@@ -2,9 +2,9 @@ import { Badge } from '@/components/ui/badge'
 import type { ConnectionStatus as Status } from './types'
 
 const CONFIG: Record<Status, { color: string; label: string }> = {
-  connecting: { color: 'bg-amber-500', label: 'Connecting' },
-  connected: { color: 'bg-emerald-500', label: 'Live' },
-  error: { color: 'bg-red-500', label: 'Error' },
+  connecting: { color: 'bg-warning', label: 'Connecting' },
+  connected: { color: 'bg-success', label: 'Live' },
+  error: { color: 'bg-destructive', label: 'Error' },
   closed: { color: 'bg-muted-foreground', label: 'Disconnected' },
 }
 

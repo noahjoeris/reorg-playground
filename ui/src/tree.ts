@@ -200,7 +200,6 @@ export function buildReactFlowGraph(
         hash: block.hash,
         miner: block.miner,
         tipStatuses: block.tipStatuses,
-        difficultyInt: block.difficulty_int,
         onBlockClick: () => onBlockClick(block),
       },
     }

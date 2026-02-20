@@ -8,7 +8,6 @@ type BlockNodeData = {
   hash: string
   miner: string
   tipStatuses: TipStatusEntry[]
-  difficultyInt: number
   onBlockClick: () => void
 }
 
@@ -22,11 +21,14 @@ function BlockNodeComponent({ data, selected }: NodeProps<BlockNodeType>) {
     .join('\n')
 
   return (
-    <div className="group relative min-w-56 max-w-56">
+    <div className="group relative min-w-60 max-w-60">
       <Handle
         type="target"
         position={Position.Left}
-        className="h-2.5 w-2.5 border-2 border-background bg-muted-foreground"
+        className={[
+          "relative h-3 w-3 border-2 border-background after:pointer-events-none after:absolute after:inset-[-0.22rem] after:rounded-full after:bg-current after:opacity-25 after:blur-[6px] after:content-['']",
+          selected ? 'bg-accent text-accent' : 'bg-muted-foreground text-muted-foreground',
+        ].join(' ')}
       />
 
       <button
@@ -35,25 +37,27 @@ function BlockNodeComponent({ data, selected }: NodeProps<BlockNodeType>) {
         title={`Block #${data.height}`}
         aria-label={`Open details for block ${data.height}`}
         className={[
-          'flex h-32 w-full flex-col rounded-xl border px-3 py-2.5 text-left transition duration-200',
-          'bg-background/90 shadow-sm hover:-translate-y-0.5 hover:shadow-md',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2',
+          'relative flex h-36 w-full flex-col overflow-hidden rounded-2xl border border-border/75 bg-muted/45 px-3.5 py-3 text-left dark:border-border/95 dark:bg-card/90',
+          'shadow-[var(--elevation-soft)] backdrop-blur-md',
+          'transition-[transform,border-color,box-shadow,background] duration-200 ease-out',
+          'hover:-translate-y-0.5 hover:shadow-[var(--elevation-lift)]',
+          'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           selected
-            ? 'border-accent shadow-[0_0_0_1px_var(--accent)] ring-2 ring-accent/30'
-            : 'border-border/80 group-hover:border-accent/40',
+            ? 'border-accent/80 bg-accent/7 shadow-[0_0_0_1px_var(--accent),0_18px_40px_-20px_var(--surface-glow)]'
+            : 'border-border/80 group-hover:border-accent/35',
         ].join(' ')}
       >
         <div className="flex items-start justify-between gap-2">
           <div>
-            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Block</p>
-            <p className="font-semibold text-foreground">#{data.height}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Block</p>
+            <p className="text-lg font-semibold leading-none text-foreground">#{data.height}</p>
           </div>
         </div>
 
-        <p className="mt-1 font-mono text-xs text-foreground" title={data.hash}>
+        <p className="mt-2 font-mono text-xs text-foreground" title={data.hash}>
           {truncatedHash}
         </p>
-        <p className="mt-1 truncate text-xs text-muted-foreground" title={minerLabel}>
+        <p className="mt-1 truncate text-xs font-medium text-muted-foreground" title={minerLabel}>
           {minerLabel}
         </p>
 
@@ -66,14 +70,16 @@ function BlockNodeComponent({ data, selected }: NodeProps<BlockNodeType>) {
             {data.tipStatuses.map(tipStatus => (
               <li
                 key={tipStatus.status}
-                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/80 bg-muted/70 px-1.5 py-0.5"
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/80 bg-background/75 px-1.5 py-0.5"
               >
                 <span
-                  className="h-1.5 w-1.5 rounded-full"
+                  className="h-1.5 w-1.5 rounded-full ring-1 ring-background/70"
                   style={{ backgroundColor: TIP_STATUS_COLORS[tipStatus.status] }}
                 />
-                <span className="text-[10px] font-medium text-foreground">{tipStatus.status}</span>
-                <span className="text-[10px] text-muted-foreground">{tipStatus.nodeNames.length}</span>
+                <span className="text-[10px] font-semibold text-foreground">{tipStatus.status}</span>
+                <span className="rounded-full bg-muted px-1 text-[10px] text-muted-foreground">
+                  {tipStatus.nodeNames.length}
+                </span>
               </li>
             ))}
           </ul>
@@ -83,7 +89,10 @@ function BlockNodeComponent({ data, selected }: NodeProps<BlockNodeType>) {
       <Handle
         type="source"
         position={Position.Right}
-        className="h-2.5 w-2.5 border-2 border-background bg-muted-foreground"
+        className={[
+          "relative h-3 w-3 border-2 border-background after:pointer-events-none after:absolute after:inset-[-0.22rem] after:rounded-full after:bg-current after:opacity-25 after:blur-[6px] after:content-['']",
+          selected ? 'bg-accent text-accent' : 'bg-muted-foreground text-muted-foreground',
+        ].join(' ')}
       />
     </div>
   )

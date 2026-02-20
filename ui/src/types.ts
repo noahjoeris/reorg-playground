@@ -6,12 +6,12 @@ export const MAX_PREV_ID = 18446744073709552000
 export type TipStatus = 'active' | 'invalid' | 'valid-fork' | 'valid-headers' | 'headers-only' | 'unknown'
 
 export const TIP_STATUS_COLORS: Record<TipStatus, string> = {
-  active: '#79FF00',
-  invalid: '#CC203B',
-  'valid-fork': '#3CACB5',
-  'valid-headers': '#FF69B4',
-  'headers-only': '#FF8800',
-  unknown: '#999999',
+  active: 'var(--color-tip-active)',
+  invalid: 'var(--color-tip-invalid)',
+  'valid-fork': 'var(--color-tip-valid-fork)',
+  'valid-headers': 'var(--color-tip-valid-headers)',
+  'headers-only': 'var(--color-tip-headers-only)',
+  unknown: 'var(--color-tip-unknown)',
 }
 
 export type HeaderInfo = {
