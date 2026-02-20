@@ -1,3 +1,4 @@
+import { Badge } from '@/components/ui/badge'
 import type { ConnectionStatus as Status } from './types'
 
 const CONFIG: Record<Status, { color: string; label: string }> = {
@@ -11,9 +12,9 @@ export function ConnectionStatus({ status }: { status: Status }) {
   const { color, label } = CONFIG[status]
 
   return (
-    <span className="inline-flex items-center gap-1.5" role="status" aria-label={`Connection status: ${label}`}>
+    <Badge variant="outline" className="gap-1.5 font-normal" role="status" aria-label={`Connection status: ${label}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${color}`} />
-      <span className="text-xs text-muted-foreground">{label}</span>
-    </span>
+      {label}
+    </Badge>
   )
 }

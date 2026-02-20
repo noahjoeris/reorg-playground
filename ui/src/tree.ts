@@ -1,6 +1,6 @@
-import { MarkerType, type Edge } from '@xyflow/react'
+import { type Edge, MarkerType } from '@xyflow/react'
 import type { BlockNodeType } from './BlockNode'
-import { MAX_PREV_ID, type DataResponse, type ProcessedBlock, type TipStatus, type TipStatusEntry } from './types'
+import { type DataResponse, MAX_PREV_ID, type ProcessedBlock, type TipStatus, type TipStatusEntry } from './types'
 
 const H_GAP = 300
 const V_GAP = 160

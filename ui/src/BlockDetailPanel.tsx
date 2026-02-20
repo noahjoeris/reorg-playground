@@ -1,4 +1,6 @@
-import { useEffect, useId, useState } from 'react'
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { type ProcessedBlock, TIP_STATUS_COLORS, type TipStatus } from './types'
 import { formatMinerLabel, shortHash } from './utils'
 
@@ -45,14 +47,9 @@ function CopyableField({
     <div className="rounded-lg border border-border/80 bg-muted/30 p-3">
       <div className="mb-1.5 flex items-center justify-between gap-3">
         <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
-        <button
-          type="button"
-          onClick={() => onCopy(id, value)}
-          className="rounded-md border border-border/80 px-2 py-0.5 text-[11px] text-muted-foreground transition hover:border-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
-          aria-label={`Copy ${label}`}
-        >
+        <Button variant="outline" size="xs" onClick={() => onCopy(id, value)} aria-label={`Copy ${label}`}>
           {copied ? 'Copied' : 'Copy'}
-        </button>
+        </Button>
       </div>
       <p className="break-all font-mono text-xs text-foreground">{value}</p>
     </div>
@@ -60,17 +57,7 @@ function CopyableField({
 }
 
 export function BlockDetailPanel({ block, onClose }: { block: ProcessedBlock; onClose: () => void }) {
-  const titleId = useId()
   const [copiedField, setCopiedField] = useState<string | null>(null)
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
 
   const copyToClipboard = async (fieldId: string, value: string) => {
     try {
@@ -85,44 +72,21 @@ export function BlockDetailPanel({ block, onClose }: { block: ProcessedBlock; on
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute inset-0 bg-black/35 backdrop-blur-[1px]"
-        aria-label="Close block details"
-      />
+    <Sheet
+      open
+      onOpenChange={open => {
+        if (!open) onClose()
+      }}
+    >
+      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+        <SheetHeader className="border-b border-border/80 pb-3">
+          <SheetTitle className="text-base sm:text-lg">Height #{block.height}</SheetTitle>
+          <SheetDescription className="truncate font-mono" title={block.hash}>
+            {shortHash(block.hash, 14, 12)}
+          </SheetDescription>
+        </SheetHeader>
 
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="relative flex h-full w-full max-w-2xl flex-col border-l border-border bg-background/95 shadow-2xl"
-      >
-        <header className="border-b border-border/80 px-4 py-3 sm:px-6">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Block details</p>
-              <h2 id={titleId} className="text-base font-semibold text-foreground sm:text-lg">
-                Height #{block.height}
-              </h2>
-              <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground" title={block.hash}>
-                {shortHash(block.hash, 14, 12)}
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md border border-border/80 p-1.5 text-muted-foreground transition hover:border-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
-              aria-label="Close block details"
-            >
-              <span aria-hidden="true">X</span>
-            </button>
-          </div>
-        </header>
-
-        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6">
+        <div className="flex-1 space-y-4 p-4">
           <section className="rounded-xl border border-border/80 bg-muted/25 p-4">
             <div className="grid gap-3 sm:grid-cols-3">
               <Metric label="Timestamp" value={formatBlockTime(block.time)} />
@@ -177,7 +141,7 @@ export function BlockDetailPanel({ block, onClose }: { block: ProcessedBlock; on
                     />
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-foreground">{STATUS_LABELS[tipStatus.status]}</p>
-                      <p className="break-words text-xs text-muted-foreground">{tipStatus.nodeNames.join(', ')}</p>
+                      <p className="wrap-break-word text-xs text-muted-foreground">{tipStatus.nodeNames.join(', ')}</p>
                     </div>
                   </li>
                 ))}
@@ -185,7 +149,7 @@ export function BlockDetailPanel({ block, onClose }: { block: ProcessedBlock; on
             </section>
           )}
         </div>
-      </aside>
-    </div>
+      </SheetContent>
+    </Sheet>
   )
 }
