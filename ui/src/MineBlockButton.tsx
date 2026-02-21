@@ -1,12 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { cn } from '@/lib/utils'
 import { mineBlock } from './api'
 import type { NodeInfo, ProcessedBlock } from './types'
 
@@ -14,9 +9,17 @@ type MineBlockButtonProps = {
   block: ProcessedBlock
   networkId: number
   nodes: NodeInfo[]
+  label?: string
+  buttonClassName?: string
 }
 
-export function MineBlockButton({ block, networkId, nodes }: MineBlockButtonProps) {
+export function MineBlockButton({
+  block,
+  networkId,
+  nodes,
+  label = 'Mine Block',
+  buttonClassName,
+}: MineBlockButtonProps) {
   const [loading, setLoading] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -25,9 +28,7 @@ export function MineBlockButton({ block, networkId, nodes }: MineBlockButtonProp
   if (!activeEntry) return null
 
   const activeNodeNames = activeEntry.nodeNames
-  const activeNodes = nodes.filter(
-    n => activeNodeNames.includes(n.name) && n.implementation === 'Bitcoin Core',
-  )
+  const activeNodes = nodes.filter(n => activeNodeNames.includes(n.name) && n.implementation === 'Bitcoin Core')
 
   if (activeNodes.length === 0) return null
 
@@ -60,14 +61,17 @@ export function MineBlockButton({ block, networkId, nodes }: MineBlockButtonProp
       <Button
         variant="outline"
         size="xs"
-        className="mt-1 w-full rounded-full bg-accent/10 text-accent hover:bg-accent/20"
+        className={cn(
+          'w-full rounded-full bg-accent/10 text-accent hover:bg-accent/20',
+          buttonClassName,
+        )}
         onClick={(e: React.MouseEvent) => {
           e.stopPropagation()
           handleClick()
         }}
         disabled={loading}
       >
-        {loading ? 'Mining...' : 'Mine Block'}
+        {loading ? 'Mining...' : label}
       </Button>
 
       {error && <p className="mt-0.5 text-center text-[10px] text-destructive">{error}</p>}
@@ -77,8 +81,8 @@ export function MineBlockButton({ block, networkId, nodes }: MineBlockButtonProp
           <DialogHeader>
             <DialogTitle>Select Node to Mine</DialogTitle>
             <DialogDescription>
-              Multiple nodes have block #{block.height} as their active tip. Choose which node
-              should mine the next block.
+              Multiple nodes have block #{block.height} as their active tip. Choose which node should mine the next
+              block.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 pt-2">

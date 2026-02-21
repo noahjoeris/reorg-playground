@@ -1,6 +1,14 @@
 import { type Edge, MarkerType } from '@xyflow/react'
 import type { BlockNodeType } from './BlockNode'
-import { type DataResponse, MAX_PREV_ID, type NodeInfo, type ProcessedBlock, type TipStatus, type TipStatusEntry } from './types'
+import type { MineBlockNodeType } from './MineBlockNode'
+import {
+  type DataResponse,
+  MAX_PREV_ID,
+  type NodeInfo,
+  type ProcessedBlock,
+  type TipStatus,
+  type TipStatusEntry,
+} from './types'
 
 const H_GAP = 300
 const V_GAP = 160
@@ -87,6 +95,8 @@ export function preprocessData(data: DataResponse): ProcessedBlock[] {
 /**
  * Convert processed blocks into React Flow nodes and edges.
  */
+export type FlowNodeType = BlockNodeType | MineBlockNodeType
+
 export function buildReactFlowGraph(
   blocks: ProcessedBlock[],
   onBlockClick: (block: ProcessedBlock) => void,
@@ -94,7 +104,7 @@ export function buildReactFlowGraph(
   networkId: number | null = null,
   networkType: string | null = null,
   allNodes: NodeInfo[] = [],
-): { nodes: BlockNodeType[]; edges: Edge[] } {
+): { nodes: FlowNodeType[]; edges: Edge[] } {
   const blockMap = new Map<number, ProcessedBlock>()
   for (const block of blocks) {
     blockMap.set(block.id, block)
@@ -189,7 +199,7 @@ export function buildReactFlowGraph(
     assignSlot(block.id)
   }
 
-  const nodes: BlockNodeType[] = blocks.map(block => {
+  const blockNodes: BlockNodeType[] = blocks.map(block => {
     const depth = heightToDepth.get(block.height) ?? 0
     const slot = slotById.get(block.id) ?? 0
 
@@ -204,15 +214,11 @@ export function buildReactFlowGraph(
         miner: block.miner,
         tipStatuses: block.tipStatuses,
         onBlockClick: () => onBlockClick(block),
-        networkId,
-        networkType,
-        nodes: allNodes,
-        block,
       },
     }
   })
 
-  const edges: Edge[] = blocks
+  const blockEdges: Edge[] = blocks
     .filter(block => block.prev_id !== MAX_PREV_ID && blockMap.has(block.prev_id))
     .map(block => {
       const highlightsSelected =
@@ -231,5 +237,51 @@ export function buildReactFlowGraph(
       }
     })
 
-  return { nodes, edges }
+  const mineNodes: MineBlockNodeType[] = []
+  const mineEdges: Edge[] = []
+
+  if (networkType === 'Regtest' && networkId !== null) {
+    for (const block of blocks) {
+      const activeEntry = block.tipStatuses.find(tipStatus => tipStatus.status === 'active')
+      if (!activeEntry) continue
+
+      const activeNodeNames = new Set(activeEntry.nodeNames)
+      const hasMineableNode = allNodes.some(
+        node => node.implementation === 'Bitcoin Core' && activeNodeNames.has(node.name),
+      )
+      if (!hasMineableNode) continue
+
+      const depth = heightToDepth.get(block.height) ?? 0
+      const slot = slotById.get(block.id) ?? 0
+      const mineNodeId = `mine-${block.id}`
+      const highlightsSelected = selectedBlockId !== null && selectedBlockId === block.id
+
+      mineNodes.push({
+        id: mineNodeId,
+        type: 'mine',
+        position: { x: (depth + 1) * H_GAP, y: slot * V_GAP },
+        selected: highlightsSelected,
+        data: {
+          block,
+          networkId,
+          nodes: allNodes,
+        },
+      })
+
+      mineEdges.push({
+        id: `${block.id}-${mineNodeId}`,
+        source: String(block.id),
+        target: mineNodeId,
+        type: 'smoothstep',
+        markerEnd: { type: MarkerType.ArrowClosed },
+        style: {
+          stroke: 'var(--accent)',
+          strokeWidth: highlightsSelected ? 2 : 1.5,
+          strokeDasharray: '5 4',
+        },
+      })
+    }
+  }
+
+  return { nodes: [...blockNodes, ...mineNodes], edges: [...blockEdges, ...mineEdges] }
 }

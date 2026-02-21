@@ -6,15 +6,16 @@ import { Separator } from '@/components/ui/separator'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ActiveNodeInfoCard } from './ActiveNodeCard'
 import { BlockDetailPanel } from './BlockDetailPanel'
-import { BlockNode, type BlockNodeType } from './BlockNode'
+import { BlockNode } from './BlockNode'
 import { ConnectionStatus } from './ConnectionStatus'
 import { useNetworkData, useNetworks } from './hooks'
 import { Legend } from './Legend'
+import { MineBlockNode } from './MineBlockNode'
 import { NetworkSelector } from './NetworkSelector'
 import { ThemeToggle } from './ThemeToggle'
-import { buildReactFlowGraph, preprocessData } from './tree'
+import { buildReactFlowGraph, type FlowNodeType, preprocessData } from './tree'
 
-const nodeTypes = { block: BlockNode }
+const nodeTypes = { block: BlockNode, mine: MineBlockNode }
 const panelGlassClass =
   '[background:var(--surface-panel)] border border-border/70 shadow-[var(--elevation-soft)] backdrop-blur-[10px]'
 const panelGlassStrongClass =
@@ -102,7 +103,7 @@ function App() {
 
   const { nodes, edges } = useMemo(() => {
     if (processedBlocks.length === 0) {
-      return { nodes: [] as BlockNodeType[], edges: [] }
+      return { nodes: [] as FlowNodeType[], edges: [] }
     }
 
     return buildReactFlowGraph(
