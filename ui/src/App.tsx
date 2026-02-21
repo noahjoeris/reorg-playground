@@ -9,7 +9,6 @@ import { BlockDetailPanel } from './BlockDetailPanel'
 import { BlockTreeNode } from './BlockTreeNode'
 import { ConnectionStatus } from './ConnectionStatus'
 import { useNetworkData, useNetworks } from './hooks'
-import { Legend } from './Legend'
 import { MineTreeNode } from './MineTreeNode'
 import { NetworkSelector } from './NetworkSelector'
 import { ThemeToggle } from './ThemeToggle'
@@ -157,14 +156,12 @@ function App() {
   return (
     <TooltipProvider delayDuration={300}>
       <div className="relative isolate flex h-screen w-screen flex-col bg-background text-foreground">
-        <header className="px-4 pt-4 pb-3 sm:px-6 sm:pt-5">
-          <div className={`${panelGlassStrongClass} rounded-2xl px-4 py-4 sm:px-6`}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <header className="px-2.5 pt-2 pb-1.5 sm:px-3.5 sm:pt-2.5 lg:px-5 lg:pt-3">
+          <div className={`${panelGlassStrongClass} rounded-2xl px-3 py-2 sm:px-4 sm:py-2.5`}>
+            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <h1 className="mt-1 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-                  Reorg Playground
-                </h1>
-                <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-muted-foreground">
+                <h1 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">Reorg Playground</h1>
+                <p className="mt-0.5 hidden max-w-2xl text-xs leading-relaxed text-muted-foreground sm:block">
                   Watch how nodes perceive forks, tips, and reorg events in real time.
                 </p>
               </div>
@@ -175,7 +172,7 @@ function App() {
               </div>
             </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-2 text-xs text-muted-foreground">
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
               <span className={metricPillClass}>
                 <span>{processedBlocks.length.toLocaleString()}</span> blocks
               </span>
@@ -212,7 +209,7 @@ function App() {
           </div>
         )}
 
-        <main className="relative min-h-0 flex-1 px-2 pb-2 sm:px-3 sm:pb-3">
+        <main className="relative min-h-0 flex-1 px-2 pb-2 sm:px-3 sm:pb-2">
           <div className={`${panelGlassClass} relative h-full overflow-hidden rounded-2xl`}>
             {showConnectionWarning && (
               <div className="border-b border-warning/40 bg-warning/12 px-4 py-2 text-xs text-warning sm:px-6">
@@ -259,7 +256,7 @@ function App() {
                   onlyRenderVisibleElements
                   proOptions={{ hideAttribution: true }}
                 >
-                  <Legend />
+                  {/* <Legend /> */}
                 </ReactFlow>
               )}
             </div>

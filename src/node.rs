@@ -7,11 +7,12 @@ use bitcoincore_rpc::bitcoin::hex::FromHex;
 use bitcoincore_rpc::bitcoin::{BlockHash, Transaction};
 use bitcoincore_rpc::Auth;
 use bitcoincore_rpc::Client;
+use bitcoincore_rpc::jsonrpc;
 use bitcoincore_rpc::RpcApi;
 use electrum_client::{
     Client as ElectrumClient, ConfigBuilder as ElectrumClientConfigBuilder, ElectrumApi,
 };
-use log::{debug, error};
+use log::debug;
 use std::cmp::max;
 use std::fmt;
 use std::str::FromStr;
@@ -280,17 +281,29 @@ impl BitcoinCoreNode {
     }
 
     fn rpc_client(&self) -> Result<Client, FetchError> {
-        match Client::new(&self.rpc_url, self.rpc_auth.clone()) {
-            Ok(c) => Ok(c),
-            Err(e) => {
-                error!(
-                    "Could not create a RPC client for node {}: {:?}",
+        let (user, pass) = self.rpc_auth.clone().get_user_pass()?;
+        let rpc_url = if self.rpc_url.contains("://") {
+            self.rpc_url.clone()
+        } else {
+            format!("http://{}", self.rpc_url)
+        };
+        let mut transport_builder = jsonrpc::minreq_http::MinreqHttpTransport::builder()
+            .url(&rpc_url)
+            .map_err(|e| {
+                FetchError::DataError(format!(
+                    "Could not set RPC URL '{}' for node {}: {}",
+                    rpc_url,
                     self.info(),
                     e
-                );
-                Err(FetchError::from(e))
-            }
+                ))
+            })?;
+        if let Some(user) = user {
+            transport_builder = transport_builder.basic_auth(user, pass);
         }
+        let client = Client::from_jsonrpc(jsonrpc::Client::with_transport(
+            transport_builder.build(),
+        ));
+        Ok(client)
     }
 }
 

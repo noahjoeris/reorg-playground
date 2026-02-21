@@ -71,9 +71,9 @@ function ReachabilityBadge({ reachable }: { reachable: boolean }) {
 
 function NodeMetric({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="min-w-0 rounded-xl border border-border/75 bg-background/55 px-2.5 py-2">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
-      <p className="mt-1 truncate font-mono text-sm font-semibold text-foreground">{value}</p>
+    <div className="inline-flex items-baseline gap-1 rounded-lg border border-border/75 bg-background/55 px-1.5 py-0.5">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{label}</p>
+      <p className="truncate font-mono text-xs font-semibold text-foreground">{value}</p>
     </div>
   )
 }
@@ -100,9 +100,9 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
 
   if (sortedNodes.length === 0) {
     return (
-      <section className="px-4 pb-2 sm:px-6" aria-label="Node health panel">
+      <section className="px-3 pb-1.5 sm:px-4 lg:px-5" aria-label="Node health panel">
         <Card className={`${panelGlassClass} gap-0 rounded-2xl border-dashed py-0`}>
-          <CardContent className="p-4">
+          <CardContent className="p-3">
             <p className="text-sm text-muted-foreground">No node status data yet.</p>
           </CardContent>
         </Card>
@@ -111,21 +111,20 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
   }
 
   return (
-    <section className="px-4 pb-2 sm:px-6" aria-label="Node health panel">
-      <div className="flex gap-3 overflow-x-auto pb-2">
+    <section className="px-3 pb-1.5 sm:px-4 lg:px-5" aria-label="Node health panel">
+      <div className="flex gap-2.5 overflow-x-auto overscroll-x-contain pb-1.5">
         {sortedNodes.map(node => {
           const currentActiveTip = activeTip(node)
           const activeHeight = currentActiveTip?.height ?? 0
           const activeHash = currentActiveTip?.hash ?? ''
           const lag = Math.max(0, maxHeight - activeHeight)
-          const progress = maxHeight === 0 ? 0 : Math.round((activeHeight / maxHeight) * 100)
           const statusSummary = tipStatusSummary(node)
 
           return (
             <Card
               key={node.id}
               className={[
-                `${panelGlassClass} min-w-76 shrink-0 gap-0 rounded-2xl py-0`,
+                `${panelGlassClass} min-w-56 shrink-0 gap-0 rounded-2xl py-0 sm:min-w-64`,
                 'transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5',
                 'hover:border-accent/35 hover:shadow-(--elevation-lift)',
                 !node.reachable && 'border-destructive/40 bg-destructive/8',
@@ -134,13 +133,16 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
                 .join(' ')}
               aria-label={`Node ${node.name}`}
             >
-              <CardHeader className="gap-2 px-4 pt-4 pb-0">
+              <CardHeader className="gap-1 px-3 pt-2.5 pb-0">
                 <div className="flex flex-wrap items-start gap-2">
                   <div className="min-w-0 flex-1">
-                    <CardTitle className="truncate text-sm tracking-tight" title={node.name}>
+                    <CardTitle className="truncate text-[13px] tracking-tight" title={node.name}>
                       {node.name}
                     </CardTitle>
-                    <p className="mt-0.5 truncate text-xs font-medium text-muted-foreground" title={node.description}>
+                    <p
+                      className="mt-0.5 hidden truncate text-xs font-medium text-muted-foreground sm:block"
+                      title={node.description}
+                    >
                       {node.description || 'No description'}
                     </p>
                   </div>
@@ -162,28 +164,12 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
                 </div>
               </CardHeader>
 
-              <CardContent className="space-y-3 px-4 py-3">
-                <dl className="grid grid-cols-3 gap-2 border-y border-border/70 py-2">
+              <CardContent className="space-y-1.5 px-3 py-2">
+                <dl className="flex flex-wrap gap-1.5">
                   <NodeMetric label="Height" value={activeHeight || 'N/A'} />
                   <NodeMetric label="Lag" value={lag} />
                   <NodeMetric label="Tips" value={node.tips.length} />
                 </dl>
-
-                <div>
-                  <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
-                    <span>Chain progress</span>
-                    <span className="font-semibold">{progress}%</span>
-                  </div>
-                  <div className="h-2 rounded-full border border-border/70 bg-muted/80 p-px">
-                    <div
-                      className={[
-                        'h-full rounded-full transition-all duration-300',
-                        node.reachable ? 'bg-accent' : 'bg-destructive/70',
-                      ].join(' ')}
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                </div>
 
                 <div className="flex items-center justify-between gap-2">
                   <Tooltip>
