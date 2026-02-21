@@ -14,7 +14,7 @@ export function Legend() {
   return (
     <Panel
       position="bottom-left"
-      className="rounded-xl border border-border/70 [background:var(--surface-panel)] px-3.5 py-2.5 shadow-[var(--elevation-soft)] backdrop-blur-[10px]"
+      className="rounded-xl border border-border/70 [background:var(--surface-panel)] px-3.5 py-2.5 shadow-(--elevation-soft) backdrop-blur-[10px]"
     >
       <div className="flex flex-col gap-1.5">
         <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">

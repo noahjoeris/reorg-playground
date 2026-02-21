@@ -125,9 +125,9 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
             <Card
               key={node.id}
               className={[
-                `${panelGlassClass} min-w-[19rem] shrink-0 gap-0 rounded-2xl py-0`,
+                `${panelGlassClass} min-w-76 shrink-0 gap-0 rounded-2xl py-0`,
                 'transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5',
-                'hover:border-accent/35 hover:shadow-[var(--elevation-lift)]',
+                'hover:border-accent/35 hover:shadow-(--elevation-lift)',
                 !node.reachable && 'border-destructive/40 bg-destructive/8',
               ]
                 .filter(Boolean)
@@ -174,7 +174,7 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
                     <span>Chain progress</span>
                     <span className="font-semibold">{progress}%</span>
                   </div>
-                  <div className="h-2 rounded-full border border-border/70 bg-muted/80 p-[1px]">
+                  <div className="h-2 rounded-full border border-border/70 bg-muted/80 p-px">
                     <div
                       className={[
                         'h-full rounded-full transition-all duration-300',

@@ -29,7 +29,7 @@ function FieldRow({ label, value, mono = false }: { label: string; value: string
   return (
     <div className="grid grid-cols-[7.25rem_minmax(0,1fr)] items-start gap-3 py-2.5 sm:grid-cols-[9rem_minmax(0,1fr)]">
       <dt className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</dt>
-      <dd className={['break-words text-foreground', mono ? 'font-mono text-xs' : 'text-sm'].join(' ')}>{value}</dd>
+      <dd className={['wrap-break-word text-foreground', mono ? 'font-mono text-xs' : 'text-sm'].join(' ')}>{value}</dd>
     </div>
   )
 }
@@ -90,7 +90,7 @@ export function BlockDetailPanel({ block, onClose }: { block: ProcessedBlock; on
     >
       <SheetContent
         side="right"
-        className="w-full overflow-y-auto border-l border-accent/25 [background:var(--surface-panel-strong)] shadow-[var(--elevation-lift)] backdrop-blur-[12px] sm:max-w-2xl"
+        className="w-full overflow-y-auto border-l border-accent/25 [background:var(--surface-panel-strong)] shadow-(--elevation-lift) backdrop-blur-md sm:max-w-2xl"
       >
         <SheetHeader className="border-b border-border/80 pb-3">
           <SectionLabel>Block Detail</SectionLabel>
@@ -159,7 +159,7 @@ export function BlockDetailPanel({ block, onClose }: { block: ProcessedBlock; on
                     />
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-foreground">{STATUS_LABELS[tipStatus.status]}</p>
-                      <p className="break-words text-xs text-muted-foreground">{tipStatus.nodeNames.join(', ')}</p>
+                      <p className="wrap-break-word text-xs text-muted-foreground">{tipStatus.nodeNames.join(', ')}</p>
                     </div>
                   </li>
                 ))}
