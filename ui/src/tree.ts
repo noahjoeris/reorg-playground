@@ -1,6 +1,6 @@
 import { type Edge, MarkerType } from '@xyflow/react'
-import type { BlockNodeType } from './BlockNode'
-import type { MineBlockNodeType } from './MineBlockNode'
+import type { BlockTreeNodeType } from './BlockTreeNode'
+import type { MineTreeNodeType } from './MineTreeNode'
 import {
   type DataResponse,
   MAX_PREV_ID,
@@ -95,7 +95,7 @@ export function preprocessData(data: DataResponse): ProcessedBlock[] {
 /**
  * Convert processed blocks into React Flow nodes and edges.
  */
-export type FlowNodeType = BlockNodeType | MineBlockNodeType
+export type FlowNodeType = BlockTreeNodeType | MineTreeNodeType
 
 export function buildReactFlowGraph(
   blocks: ProcessedBlock[],
@@ -199,7 +199,7 @@ export function buildReactFlowGraph(
     assignSlot(block.id)
   }
 
-  const blockNodes: BlockNodeType[] = blocks.map(block => {
+  const blockNodes: BlockTreeNodeType[] = blocks.map(block => {
     const depth = heightToDepth.get(block.height) ?? 0
     const slot = slotById.get(block.id) ?? 0
 
@@ -237,7 +237,7 @@ export function buildReactFlowGraph(
       }
     })
 
-  const mineNodes: MineBlockNodeType[] = []
+  const mineNodes: MineTreeNodeType[] = []
   const mineEdges: Edge[] = []
 
   if (networkType === 'Regtest' && networkId !== null) {

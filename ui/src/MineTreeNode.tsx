@@ -3,15 +3,15 @@ import { memo } from 'react'
 import { MineBlockButton } from './MineBlockButton'
 import type { NodeInfo, ProcessedBlock } from './types'
 
-type MineBlockNodeData = {
+type MineTreeNodeData = {
   block: ProcessedBlock
   networkId: number
   nodes: NodeInfo[]
 }
 
-export type MineBlockNodeType = Node<MineBlockNodeData, 'mine'>
+export type MineTreeNodeType = Node<MineTreeNodeData, 'mine'>
 
-function MineBlockNodeComponent({ data, selected }: NodeProps<MineBlockNodeType>) {
+function MineTreeNodeComponent({ data, selected }: NodeProps<MineTreeNodeType>) {
   return (
     <div className="group relative flex h-36 items-center">
       <Handle
@@ -39,5 +39,5 @@ function MineBlockNodeComponent({ data, selected }: NodeProps<MineBlockNodeType>
   )
 }
 
-export const MineBlockNode = memo(MineBlockNodeComponent)
-MineBlockNode.displayName = 'MineBlockNode'
+export const MineTreeNode = memo(MineTreeNodeComponent)
+MineTreeNode.displayName = 'MineTreeNode'

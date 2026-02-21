@@ -3,7 +3,7 @@ import { memo } from 'react'
 import { TIP_STATUS_COLORS, type TipStatusEntry } from './types'
 import { formatMinerLabel, shortHash } from './utils'
 
-type BlockNodeData = {
+type BlockTreeNodeData = {
   height: number
   hash: string
   miner: string
@@ -11,9 +11,9 @@ type BlockNodeData = {
   onBlockClick: () => void
 }
 
-export type BlockNodeType = Node<BlockNodeData, 'block'>
+export type BlockTreeNodeType = Node<BlockTreeNodeData, 'block'>
 
-function BlockNodeComponent({ data, selected }: NodeProps<BlockNodeType>) {
+function BlockTreeNodeComponent({ data, selected }: NodeProps<BlockTreeNodeType>) {
   const truncatedHash = shortHash(data.hash, 10, 8)
   const minerLabel = formatMinerLabel(data.miner)
   const tipSummary = data.tipStatuses
@@ -98,5 +98,5 @@ function BlockNodeComponent({ data, selected }: NodeProps<BlockNodeType>) {
   )
 }
 
-export const BlockNode = memo(BlockNodeComponent)
-BlockNode.displayName = 'BlockNode'
+export const BlockTreeNode = memo(BlockTreeNodeComponent)
+BlockTreeNode.displayName = 'BlockTreeNode'

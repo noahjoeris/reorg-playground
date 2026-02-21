@@ -6,16 +6,16 @@ import { Separator } from '@/components/ui/separator'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ActiveNodeInfoCard } from './ActiveNodeCard'
 import { BlockDetailPanel } from './BlockDetailPanel'
-import { BlockNode } from './BlockNode'
+import { BlockTreeNode } from './BlockTreeNode'
 import { ConnectionStatus } from './ConnectionStatus'
 import { useNetworkData, useNetworks } from './hooks'
 import { Legend } from './Legend'
-import { MineBlockNode } from './MineBlockNode'
+import { MineTreeNode } from './MineTreeNode'
 import { NetworkSelector } from './NetworkSelector'
 import { ThemeToggle } from './ThemeToggle'
 import { buildReactFlowGraph, type FlowNodeType, preprocessData } from './tree'
 
-const nodeTypes = { block: BlockNode, mine: MineBlockNode }
+const nodeTypes = { block: BlockTreeNode, mine: MineTreeNode }
 const panelGlassClass =
   '[background:var(--surface-panel)] border border-border/70 shadow-[var(--elevation-soft)] backdrop-blur-[10px]'
 const panelGlassStrongClass =
