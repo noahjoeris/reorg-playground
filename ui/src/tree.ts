@@ -1,6 +1,6 @@
 import { type Edge, MarkerType } from '@xyflow/react'
 import type { BlockNodeType } from './BlockNode'
-import { type DataResponse, MAX_PREV_ID, type ProcessedBlock, type TipStatus, type TipStatusEntry } from './types'
+import { type DataResponse, MAX_PREV_ID, type NodeInfo, type ProcessedBlock, type TipStatus, type TipStatusEntry } from './types'
 
 const H_GAP = 300
 const V_GAP = 160
@@ -91,6 +91,9 @@ export function buildReactFlowGraph(
   blocks: ProcessedBlock[],
   onBlockClick: (block: ProcessedBlock) => void,
   selectedBlockId: number | null = null,
+  networkId: number | null = null,
+  networkType: string | null = null,
+  allNodes: NodeInfo[] = [],
 ): { nodes: BlockNodeType[]; edges: Edge[] } {
   const blockMap = new Map<number, ProcessedBlock>()
   for (const block of blocks) {
@@ -201,6 +204,10 @@ export function buildReactFlowGraph(
         miner: block.miner,
         tipStatuses: block.tipStatuses,
         onBlockClick: () => onBlockClick(block),
+        networkId,
+        networkType,
+        nodes: allNodes,
+        block,
       },
     }
   })

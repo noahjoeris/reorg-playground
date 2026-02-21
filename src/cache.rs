@@ -240,6 +240,7 @@ pub async fn update_cache(
 mod tests {
     use super::*;
     use crate::node::NodeInfo;
+    use std::collections::BTreeMap;
     use std::sync::Arc;
     use tokio::sync::{Mutex, broadcast};
 

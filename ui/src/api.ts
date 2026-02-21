@@ -1,4 +1,4 @@
-import type { DataResponse, Network, NetworksResponse } from './types'
+import type { DataResponse, MineBlockResponse, Network, NetworksResponse } from './types'
 
 export async function fetchNetworks(): Promise<Network[]> {
   const res = await fetch('api/networks.json')
@@ -15,4 +15,13 @@ export async function fetchData(networkId: number): Promise<DataResponse> {
 
 export function createChangesEventSource(): EventSource {
   return new EventSource('api/changes')
+}
+
+export async function mineBlock(networkId: number, nodeId: number): Promise<MineBlockResponse> {
+  const res = await fetch(`api/${networkId}/mine-block`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ node_id: nodeId }),
+  })
+  return res.json()
 }

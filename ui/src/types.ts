@@ -46,10 +46,13 @@ export type NodeInfo = {
   reachable: boolean
 }
 
+export type NetworkType = 'Mainnet' | 'Testnet' | 'Signet' | 'Regtest'
+
 export type Network = {
   id: number
   name: string
   description: string
+  network_type: NetworkType | null
 }
 
 export type NetworksResponse = {
@@ -78,3 +81,8 @@ export type ProcessedBlock = HeaderInfo & {
 }
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'error' | 'closed'
+
+export type MineBlockResponse = {
+  success: boolean
+  error?: string
+}

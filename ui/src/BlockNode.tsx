@@ -1,6 +1,7 @@
 import { Handle, type Node, type NodeProps, Position } from '@xyflow/react'
 import { memo } from 'react'
-import { TIP_STATUS_COLORS, type TipStatusEntry } from './types'
+import { MineBlockButton } from './MineBlockButton'
+import { TIP_STATUS_COLORS, type NodeInfo, type ProcessedBlock, type TipStatusEntry } from './types'
 import { formatMinerLabel, shortHash } from './utils'
 
 type BlockNodeData = {
@@ -9,6 +10,10 @@ type BlockNodeData = {
   miner: string
   tipStatuses: TipStatusEntry[]
   onBlockClick: () => void
+  networkId: number | null
+  networkType: string | null
+  nodes: NodeInfo[]
+  block: ProcessedBlock
 }
 
 export type BlockNodeType = Node<BlockNodeData, 'block'>
@@ -85,6 +90,10 @@ function BlockNodeComponent({ data, selected }: NodeProps<BlockNodeType>) {
           </ul>
         )}
       </button>
+
+      {data.networkType === 'Regtest' && data.networkId !== null && (
+        <MineBlockButton block={data.block} networkId={data.networkId} nodes={data.nodes} />
+      )}
 
       <Handle
         type="source"

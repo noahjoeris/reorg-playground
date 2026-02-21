@@ -96,13 +96,24 @@ function App() {
     setSelectedBlockId(blockId)
   }, [])
 
+  const selectedNetwork = useMemo(() => {
+    return networks.find(n => n.id === selectedNetworkId) ?? null
+  }, [networks, selectedNetworkId])
+
   const { nodes, edges } = useMemo(() => {
     if (processedBlocks.length === 0) {
       return { nodes: [] as BlockNodeType[], edges: [] }
     }
 
-    return buildReactFlowGraph(processedBlocks, block => handleBlockClick(block.id), selectedBlockId)
-  }, [processedBlocks, handleBlockClick, selectedBlockId])
+    return buildReactFlowGraph(
+      processedBlocks,
+      block => handleBlockClick(block.id),
+      selectedBlockId,
+      selectedNetworkId,
+      selectedNetwork?.network_type ?? null,
+      data?.nodes ?? [],
+    )
+  }, [processedBlocks, handleBlockClick, selectedBlockId, selectedNetworkId, selectedNetwork, data])
 
   if (networksLoading) {
     return (

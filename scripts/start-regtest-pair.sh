@@ -23,8 +23,8 @@ bitcoind -regtest -daemon -datadir="$NODE_B_DATA_DIR" -port="$NODE_B_P2P_PORT" -
 
 sleep 5
 
+# One addnode is enough; the connection is bidirectional
 bitcoin-cli -regtest -datadir="$NODE_A_DATA_DIR" -rpcconnect="$RPC_HOST" -rpcport="$NODE_A_RPC_PORT" -rpcuser="$RPC_USER" -rpcpassword="$RPC_PASSWORD" addnode "${RPC_HOST}:${NODE_B_P2P_PORT}" onetry
-bitcoin-cli -regtest -datadir="$NODE_B_DATA_DIR" -rpcconnect="$RPC_HOST" -rpcport="$NODE_B_RPC_PORT" -rpcuser="$RPC_USER" -rpcpassword="$RPC_PASSWORD" addnode "${RPC_HOST}:${NODE_A_P2P_PORT}" onetry
 
 echo "Node A connections: $(bitcoin-cli -regtest -datadir="$NODE_A_DATA_DIR" -rpcconnect="$RPC_HOST" -rpcport="$NODE_A_RPC_PORT" -rpcuser="$RPC_USER" -rpcpassword="$RPC_PASSWORD" getconnectioncount)"
 echo "Node B connections: $(bitcoin-cli -regtest -datadir="$NODE_B_DATA_DIR" -rpcconnect="$RPC_HOST" -rpcport="$NODE_B_RPC_PORT" -rpcuser="$RPC_USER" -rpcpassword="$RPC_PASSWORD" getconnectioncount)"

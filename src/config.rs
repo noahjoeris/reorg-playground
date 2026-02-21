@@ -3,7 +3,8 @@ use crate::node::{BitcoinCoreNode, BtcdNode, Electrum, Esplora, Node, NodeInfo};
 use bitcoincore_rpc::Auth;
 use bitcoincore_rpc::bitcoin::Network as BitcoinNetwork;
 use log::{error, info};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::hash::Hash;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -11,6 +12,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{env, fmt, fs};
+
+use crate::types::{MineAuth, MineableNodeInfo, NetworkMineInfo};
 
 pub const ENVVAR_CONFIG_FILE: &str = "CONFIG_FILE";
 const DEFAULT_CONFIG: &str = "config.toml";
@@ -20,7 +23,7 @@ const DEFAULT_RPC_PORT: u16 = 8332;
 
 pub type BoxedSyncSendNode = Arc<dyn Node + Send + Sync>;
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 pub enum NetworkType {
     Mainnet,
     Testnet,
@@ -55,6 +58,7 @@ pub struct Config {
     pub address: SocketAddr,
     pub networks: Vec<Network>,
     pub rss_base_url: String,
+    pub mine_info: HashMap<u32, NetworkMineInfo>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -194,9 +198,13 @@ fn parse_config(config_str: &str) -> Result<Config, ConfigError> {
 
     let mut networks: Vec<Network> = vec![];
     let mut network_ids: Vec<u32> = vec![];
+    let mut mine_info: HashMap<u32, NetworkMineInfo> = HashMap::new();
+
     for toml_network in toml_config.networks.iter() {
         let mut nodes: Vec<BoxedSyncSendNode> = vec![];
         let mut node_ids: Vec<u32> = vec![];
+        let mut mine_nodes: HashMap<u32, MineableNodeInfo> = HashMap::new();
+
         for toml_node in toml_network.nodes.iter() {
             match parse_toml_node(toml_node) {
                 Ok(node) => {
@@ -217,7 +225,45 @@ fn parse_config(config_str: &str) -> Result<Config, ConfigError> {
                     return Err(e);
                 }
             }
+
+            // Extract mine connection info for Bitcoin Core nodes
+            let backend = toml_node
+                .client_implementation
+                .as_ref()
+                .and_then(|s| s.parse::<Backend>().ok())
+                .unwrap_or(DEFAULT_BACKEND);
+            if matches!(backend, Backend::BitcoinCore) {
+                let port = toml_node.rpc_port.unwrap_or(DEFAULT_RPC_PORT);
+                let auth = if let Some(ref cookie) = toml_node.rpc_cookie_file {
+                    Some(MineAuth::CookieFile(cookie.clone()))
+                } else if let (Some(user), Some(pass)) =
+                    (&toml_node.rpc_user, &toml_node.rpc_password)
+                {
+                    Some(MineAuth::UserPass(user.clone(), pass.clone()))
+                } else {
+                    None
+                };
+                if let Some(auth) = auth {
+                    mine_nodes.insert(
+                        toml_node.id,
+                        MineableNodeInfo {
+                            rpc_host: toml_node.rpc_host.clone(),
+                            rpc_port: port,
+                            rpc_auth: auth,
+                        },
+                    );
+                }
+            }
         }
+
+        mine_info.insert(
+            toml_network.id,
+            NetworkMineInfo {
+                network_type: toml_network.network_type.clone(),
+                nodes: mine_nodes,
+            },
+        );
+
         match parse_toml_network(toml_network, nodes) {
             Ok(network) => {
                 if !network_ids.contains(&network.id) {
@@ -251,6 +297,7 @@ fn parse_config(config_str: &str) -> Result<Config, ConfigError> {
         address: SocketAddr::from_str(&toml_config.address)?,
         rss_base_url: toml_config.rss_base_url.unwrap_or_default().clone(),
         networks,
+        mine_info,
     })
 }
 

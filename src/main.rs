@@ -13,7 +13,7 @@ use tokio::sync::{Mutex, broadcast};
 use tokio::task;
 use tokio::time::{Duration, Instant, interval, interval_at, sleep};
 
-use axum::{Router, routing::get};
+use axum::{Router, routing::{get, post}};
 
 mod api;
 mod cache;
@@ -91,12 +91,14 @@ async fn main() -> Result<(), MainError> {
         network_infos,
         rss_base_url: config.rss_base_url.clone(),
         cache_changed_tx: cache_changed_tx.clone(),
+        mine_info: Arc::new(config.mine_info),
     };
 
     let app = Router::new()
         .route("/api/{network_id}/data.json", get(api::data_response))
         .route("/api/networks.json", get(api::networks_response))
         .route("/api/changes", get(api::changes_sse))
+        .route("/api/{network_id}/mine-block", post(api::mine_block))
         .route("/rss/{network_id}/forks.xml", get(rss::forks_response))
         .route(
             "/rss/{network_id}/invalid.xml",
