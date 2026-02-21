@@ -11,9 +11,12 @@ use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::{Mutex, broadcast};
 use tokio::task;
-use tokio::time::{Duration, Instant, interval, interval_at, sleep};
+use tokio::time::{Duration, Instant, interval_at, sleep};
 
-use axum::{Router, routing::{get, post}};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 
 mod api;
 mod cache;
@@ -42,7 +45,10 @@ async fn startup() -> Result<(config::Config, Db, Caches), MainError> {
     info!("Configuration loaded");
 
     let connection = Connection::open(config.database_path.clone()).map_err(|e| {
-        error!("Could not open the database {:?}: {}", config.database_path, e);
+        error!(
+            "Could not open the database {:?}: {}",
+            config.database_path, e
+        );
         MainError::Db(DbError::from(e))
     })?;
     info!("Opened database: {:?}", config.database_path);
@@ -51,14 +57,16 @@ async fn startup() -> Result<(config::Config, Db, Caches), MainError> {
     let caches: Caches = Arc::new(Mutex::new(BTreeMap::new()));
 
     db::setup_db(db.clone()).await.map_err(|e| {
-        error!("Could not setup the database {:?}: {}", config.database_path, e);
+        error!(
+            "Could not setup the database {:?}: {}",
+            config.database_path, e
+        );
         MainError::Db(e)
     })?;
     info!("Database setup successful");
 
     Ok((config, db, caches))
 }
-
 
 #[tokio::main]
 async fn main() -> Result<(), MainError> {
@@ -69,10 +77,12 @@ async fn main() -> Result<(), MainError> {
     let network_infos: Vec<NetworkJson> = config.networks.iter().map(NetworkJson::new).collect();
 
     for network in config.networks.iter().cloned() {
-        let tree_info = db::load_treeinfos(db.clone(), network.id).await.map_err(|e| {
-            error!("Could not load headers from database: {}", e);
-            MainError::Db(e)
-        })?;
+        let tree_info = db::load_treeinfos(db.clone(), network.id)
+            .await
+            .map_err(|e| {
+                error!("Could not load headers from database: {}", e);
+                MainError::Db(e)
+            })?;
         let tree: Tree = Arc::new(Mutex::new(tree_info));
         cache::populate_cache(&network, &tree, &caches).await;
 
@@ -223,23 +233,22 @@ fn spawn_network_tasks(
                 tips.sort();
 
                 if last_tips != tips {
-                    let (new_headers, miners_needed): (Vec<HeaderInfo>, Vec<BlockHash>) =
-                        match node
-                            .new_headers(&tips, &tree_clone, network.first_tracked_height)
-                            .await
-                        {
-                            Ok(headers) => headers,
-                            Err(e) => {
-                                error!(
-                                    "Could not fetch headers from {} on network '{}' (id={}): {}",
-                                    node.info(),
-                                    network.name,
-                                    network.id,
-                                    e
-                                );
-                                continue;
-                            }
-                        };
+                    let (new_headers, miners_needed): (Vec<HeaderInfo>, Vec<BlockHash>) = match node
+                        .new_headers(&tips, &tree_clone, network.first_tracked_height)
+                        .await
+                    {
+                        Ok(headers) => headers,
+                        Err(e) => {
+                            error!(
+                                "Could not fetch headers from {} on network '{}' (id={}): {}",
+                                node.info(),
+                                network.name,
+                                network.id,
+                                e
+                            );
+                            continue;
+                        }
+                    };
 
                     for hash in miners_needed.iter() {
                         if let Err(e) = miner_id_tx_clone.send(*hash) {
@@ -254,8 +263,7 @@ fn spawn_network_tasks(
                     let db_write = db_write.clone();
                     let mut tree_changed = false;
                     if !new_headers.is_empty() {
-                        tree_changed =
-                            headertree::insert_headers(&tree_clone, &new_headers).await;
+                        tree_changed = headertree::insert_headers(&tree_clone, &new_headers).await;
 
                         match db::write_to_db(&new_headers, db_write, network.id).await {
                             Ok(_) => info!(
@@ -299,8 +307,7 @@ fn spawn_network_tasks(
                             tip_heights,
                         )
                         .await;
-                        let forks =
-                            headertree::recent_forks(&tree_clone, MAX_FORKS_IN_CACHE).await;
+                        let forks = headertree::recent_forks(&tree_clone, MAX_FORKS_IN_CACHE).await;
 
                         update_cache(
                             &caches_clone,
@@ -326,8 +333,7 @@ fn spawn_network_tasks(
     task::spawn(async move {
         sleep(Duration::from_secs(5 * 60)).await;
 
-        let tip_heights: BTreeSet<u64> =
-            cache::tip_heights(network_clone.id, &caches_clone).await;
+        let tip_heights: BTreeSet<u64> = cache::tip_heights(network_clone.id, &caches_clone).await;
         let interesting_heights = headertree::sorted_interesting_heights(
             &tree_clone,
             network_clone.max_interesting_heights,
@@ -387,8 +393,7 @@ fn spawn_network_tasks(
                         None => {
                             error!(
                                 "Block hash {} not (yet) present in tree for network: {}. Skipping identification...",
-                                hash,
-                                network_clone.name
+                                hash, network_clone.name
                             );
                             continue;
                         }
@@ -411,10 +416,9 @@ fn spawn_network_tasks(
                         .await
                     {
                         Ok(coinbase) => {
-                            miner = match coinbase.identify_pool(
-                                miner_network_type,
-                                &miner_identification_data,
-                            ) {
+                            miner = match coinbase
+                                .identify_pool(miner_network_type, &miner_identification_data)
+                            {
                                 Some(result) => result.pool.name,
                                 None => MINER_UNKNOWN.to_string(),
                             };
@@ -470,20 +474,21 @@ fn spawn_network_tasks(
     });
 }
 
+const NODE_VERSION_RETRIES: u32 = 5;
+const NODE_VERSION_RETRY_DELAY: Duration = Duration::from_secs(10);
+
 async fn load_node_version(node: BoxedSyncSendNode, network: &str) -> String {
-    let mut interval = interval(Duration::from_secs(10));
-    for _ in 0..5 {
+    for attempt in 0..NODE_VERSION_RETRIES {
         match node.version().await {
-            Ok(version) => {
-                return version;
-            }
+            Ok(version) => return version,
             Err(e) => match e {
                 error::FetchError::BitcoinCoreRPC(JsonRpc(msg)) => {
                     warn!(
-                        "Could not fetch getnetworkinfo from node='{}' on network '{}': {:?}. Retrying...",
+                        "Could not fetch getnetworkinfo from node='{}' on network '{}': {:?}. Retrying in {:?}...",
                         node.info().name,
                         network,
-                        msg
+                        msg,
+                        NODE_VERSION_RETRY_DELAY
                     );
                 }
                 _ => {
@@ -496,16 +501,18 @@ async fn load_node_version(node: BoxedSyncSendNode, network: &str) -> String {
                     return VERSION_UNKNOWN.to_string();
                 }
             },
-        };
-        interval.tick().await;
+        }
+        // Wait before next attempt
+        if attempt < NODE_VERSION_RETRIES - 1 {
+            tokio::time::sleep(NODE_VERSION_RETRY_DELAY).await;
+        }
     }
     warn!(
-        "Could not load version from node='{}' on network='{}'. Using '{}' as version.",
+        "Could not load version from node='{}' on network='{}' after {} attempts. Using '{}'.",
         node.info().name,
         network,
+        NODE_VERSION_RETRIES,
         VERSION_UNKNOWN
     );
     VERSION_UNKNOWN.to_string()
 }
-
-
