@@ -207,6 +207,8 @@ export function buildReactFlowGraph(
       id: String(block.id),
       type: 'block' as const,
       position: { x: depth * H_GAP, y: slot * V_GAP },
+      width: 240,
+      height: 144,
       selected: selectedBlockId === block.id,
       data: {
         height: block.height,
@@ -260,6 +262,8 @@ export function buildReactFlowGraph(
         id: mineNodeId,
         type: 'mine',
         position: { x: (depth + 1) * H_GAP, y: slot * V_GAP },
+        width: 100,
+        height: 144,
         selected: highlightsSelected,
         data: {
           block,

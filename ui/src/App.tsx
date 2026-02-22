@@ -1,4 +1,4 @@
-import { ReactFlow } from '@xyflow/react'
+import { MiniMap, type Node, ReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,7 @@ import { MineTreeNode } from './MineTreeNode'
 import { NetworkSelector } from './NetworkSelector'
 import { ThemeToggle } from './ThemeToggle'
 import { buildReactFlowGraph, type FlowNodeType, preprocessData } from './tree'
+import { TIP_STATUS_COLORS, type TipStatusEntry } from './types'
 
 const nodeTypes = { block: BlockTreeNode, mine: MineTreeNode }
 const panelGlassClass =
@@ -115,6 +116,17 @@ function App() {
       data?.nodes ?? [],
     )
   }, [processedBlocks, handleBlockClick, selectedBlockId, selectedNetworkId, selectedNetwork, data])
+
+  const minimapNodeColor = useCallback((node: Node) => {
+    if (node.type === 'block') {
+      const statuses = (node.data as { tipStatuses?: TipStatusEntry[] }).tipStatuses
+      if (statuses && statuses.length > 0) {
+        return TIP_STATUS_COLORS[statuses[0].status]
+      }
+    }
+    if (node.type === 'mine') return 'var(--accent)'
+    return 'var(--foreground)'
+  }, [])
 
   if (networksLoading) {
     return (
@@ -252,12 +264,21 @@ function App() {
                   nodesConnectable={false}
                   fitView
                   fitViewOptions={{ padding: 0.25, duration: 200 }}
-                  minZoom={0.05}
+                  minZoom={0.1}
                   maxZoom={1.4}
                   onlyRenderVisibleElements
                   proOptions={{ hideAttribution: true }}
                 >
                   {/* <Legend /> */}
+                  <MiniMap
+                    pannable
+                    nodeColor={minimapNodeColor}
+                    nodeStrokeColor="var(--accent)"
+                    bgColor="var(--muted)"
+                    inversePan
+                    maskColor="color-mix(in srgb, var(--muted) 50%, transparent)"
+                    className="rounded-2xl border border-border"
+                  />
                 </ReactFlow>
               )}
             </div>

@@ -18,7 +18,7 @@ rss_base_url = ""
 id = 1 # identifier in DB
 name = "Mainnet"
 description = ""
-first_tracked_height = 0 # lower bound; scans from this height
+first_tracked_height = 0 # lower bound; loads all blocks from this height into the db
 max_interesting_heights = 100 # includes heights with forks, node tip heights, and max height
 network_type = "Mainnet" # Mainnet | Testnet | Signet | Regtest
 
