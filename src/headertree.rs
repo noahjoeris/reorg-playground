@@ -7,21 +7,13 @@ use log::{debug, info, warn};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::{Dfs, EdgeRef};
 
-fn hotspot_budget(max_interesting_heights: usize) -> usize {
-    if max_interesting_heights == 0 {
-        return 0;
-    }
-    if max_interesting_heights <= 10 {
-        return 2.min(max_interesting_heights);
-    }
-    (max_interesting_heights / 5).max(8)
-}
-
 /// Hybrid selection policy: always includes a stable recent window of
-/// `max_interesting_heights`, then overlays a bounded set of fork/tip hotspots.
+/// `visible_heights_from_tip`, then overlays up to `extra_hotspot_heights`
+/// fork/tip hotspots.
 pub async fn sorted_interesting_heights(
     tree: &Tree,
-    max_interesting_heights: usize,
+    visible_heights_from_tip: usize,
+    extra_hotspot_heights: usize,
     first_tracked_height: u64,
     tip_heights: BTreeSet<u64>,
 ) -> Vec<u64> {
@@ -30,8 +22,8 @@ pub async fn sorted_interesting_heights(
         warn!("tried to collapse an empty tree!");
         return vec![];
     }
-    if max_interesting_heights == 0 {
-        warn!("max_interesting_heights=0; no heights can be selected");
+    if visible_heights_from_tip == 0 {
+        warn!("visible_heights_from_tip=0; no heights can be selected");
         return vec![];
     }
 
@@ -50,7 +42,7 @@ pub async fn sorted_interesting_heights(
 
     // 1. Always include the recent window from first_tracked_height onward.
     let window_start = max_height
-        .saturating_sub(max_interesting_heights.saturating_sub(1) as u64)
+        .saturating_sub(visible_heights_from_tip.saturating_sub(1) as u64)
         .max(first_tracked_height);
     let mut interesting_heights_set: BTreeSet<u64> = BTreeSet::new();
     for h in window_start..=max_height {
@@ -75,8 +67,7 @@ pub async fn sorted_interesting_heights(
         .filter(|h| height_occurences.contains_key(h))
         .collect();
     hotspot_heights.sort_unstable_by(|a, b| b.cmp(a));
-    let hotspot_budget = hotspot_budget(max_interesting_heights);
-    for h in hotspot_heights.iter().take(hotspot_budget) {
+    for h in hotspot_heights.iter().take(extra_hotspot_heights) {
         interesting_heights_set.insert(*h);
     }
     let interesting_heights: Vec<u64> = interesting_heights_set.into_iter().collect();
@@ -84,12 +75,12 @@ pub async fn sorted_interesting_heights(
     let fork_count = height_occurences.iter().filter(|(_, v)| **v > 1).count();
 
     debug!(
-        "interesting heights: first_tracked_height={}, window_start={}, max_height={}, window_budget={}, hotspot_budget={}, fork_count={}, tip_count={}, selected={}",
+        "interesting heights: first_tracked_height={}, window_start={}, max_height={}, visible_heights_from_tip={}, extra_hotspot_heights={}, fork_count={}, tip_count={}, selected={}",
         first_tracked_height,
         window_start,
         max_height,
-        max_interesting_heights,
-        hotspot_budget,
+        visible_heights_from_tip,
+        extra_hotspot_heights,
         fork_count,
         tip_heights.len(),
         interesting_heights.len(),
@@ -101,13 +92,15 @@ pub async fn sorted_interesting_heights(
 // We strip the tree of headers that aren't interesting to us.
 pub async fn strip_tree(
     tree: &Tree,
-    max_interesting_heights: usize,
+    visible_heights_from_tip: usize,
+    extra_hotspot_heights: usize,
     first_tracked_height: u64,
     tip_heights: BTreeSet<u64>,
 ) -> Vec<HeaderInfoJson> {
     let interesting_heights = sorted_interesting_heights(
         tree,
-        max_interesting_heights,
+        visible_heights_from_tip,
+        extra_hotspot_heights,
         first_tracked_height,
         tip_heights,
     )
@@ -367,9 +360,17 @@ mod tests {
     async fn test_no_forks_stable_recent_window() {
         let tree = build_linear_tree(100, 250);
         let tip_heights: BTreeSet<u64> = [250].into();
-        let max_interesting = 100;
+        let visible_heights_from_tip = 100;
+        let extra_hotspot_heights = 20;
 
-        let heights = sorted_interesting_heights(&tree, max_interesting, 100, tip_heights).await;
+        let heights = sorted_interesting_heights(
+            &tree,
+            visible_heights_from_tip,
+            extra_hotspot_heights,
+            100,
+            tip_heights,
+        )
+        .await;
 
         // Should include the recent window: 151..=250 (100 heights)
         assert!(
@@ -386,9 +387,17 @@ mod tests {
         // Chain from 100..250 with a fork at height 120
         let tree = build_forked_tree(100, 250, 120);
         let tip_heights: BTreeSet<u64> = [250].into();
-        let max_interesting = 100;
+        let visible_heights_from_tip = 100;
+        let extra_hotspot_heights = 20;
 
-        let heights = sorted_interesting_heights(&tree, max_interesting, 100, tip_heights).await;
+        let heights = sorted_interesting_heights(
+            &tree,
+            visible_heights_from_tip,
+            extra_hotspot_heights,
+            100,
+            tip_heights,
+        )
+        .await;
 
         // Must contain the tip and the fork height
         assert!(heights.contains(&250), "must contain tip");
@@ -405,12 +414,19 @@ mod tests {
         // Simulates startup where no node tips are known yet
         let tree = build_linear_tree(937000, 937150);
         let tip_heights: BTreeSet<u64> = BTreeSet::new();
-        let max_interesting = 150;
+        let visible_heights_from_tip = 150;
+        let extra_hotspot_heights = 30;
 
-        let heights =
-            sorted_interesting_heights(&tree, max_interesting, 937000, tip_heights).await;
+        let heights = sorted_interesting_heights(
+            &tree,
+            visible_heights_from_tip,
+            extra_hotspot_heights,
+            937000,
+            tip_heights,
+        )
+        .await;
 
-        // The recent window should cover the full range since it fits within max_interesting
+        // The recent window should cover the full range since it fits within the tip window size.
         assert!(
             heights.len() >= 100,
             "startup should still show many blocks, got {}",
@@ -422,14 +438,29 @@ mod tests {
     #[tokio::test]
     async fn test_strip_tree_output_count_stable() {
         let tree = build_linear_tree(937000, 937150);
-        let max_interesting = 150;
+        let visible_heights_from_tip = 150;
+        let extra_hotspot_heights = 30;
 
         // Call with empty tips (startup)
-        let result_startup = strip_tree(&tree, max_interesting, 937000, BTreeSet::new()).await;
+        let result_startup = strip_tree(
+            &tree,
+            visible_heights_from_tip,
+            extra_hotspot_heights,
+            937000,
+            BTreeSet::new(),
+        )
+        .await;
 
         // Call with tip heights (live)
         let tip_heights: BTreeSet<u64> = [937150].into();
-        let result_live = strip_tree(&tree, max_interesting, 937000, tip_heights).await;
+        let result_live = strip_tree(
+            &tree,
+            visible_heights_from_tip,
+            extra_hotspot_heights,
+            937000,
+            tip_heights,
+        )
+        .await;
 
         // Both should produce similar counts — not collapse from many to ~9
         let diff = (result_startup.len() as i64 - result_live.len() as i64).unsigned_abs();
@@ -444,10 +475,18 @@ mod tests {
     #[tokio::test]
     async fn test_stale_tips_do_not_collapse_latest_window() {
         let tree = build_forked_tree(937000, 937831, 937404);
-        let max_interesting = 150;
+        let visible_heights_from_tip = 150;
+        let extra_hotspot_heights = 30;
         let tip_heights: BTreeSet<u64> = [937831, 937404, 935976, 900000, 500000].into();
 
-        let stripped = strip_tree(&tree, max_interesting, 937000, tip_heights).await;
+        let stripped = strip_tree(
+            &tree,
+            visible_heights_from_tip,
+            extra_hotspot_heights,
+            937000,
+            tip_heights,
+        )
+        .await;
         let heights: BTreeSet<u64> = stripped.iter().map(|h| h.height).collect();
 
         assert!(heights.contains(&937831), "must keep chain tip");

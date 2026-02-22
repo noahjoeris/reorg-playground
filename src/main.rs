@@ -78,16 +78,19 @@ async fn main() -> Result<(), MainError> {
 
     for network in config.networks.iter().cloned() {
         info!(
-            "initializing network '{}' (id={}): first_tracked_height={}, max_interesting_heights={}",
-            network.name, network.id, network.first_tracked_height, network.max_interesting_heights
+            "initializing network '{}' (id={}): first_tracked_height={}, visible_heights_from_tip={}, extra_hotspot_heights={}",
+            network.name,
+            network.id,
+            network.first_tracked_height,
+            network.visible_heights_from_tip,
+            network.extra_hotspot_heights
         );
-        let tree_info =
-            db::load_treeinfos(db.clone(), network.id, network.first_tracked_height)
-                .await
-                .map_err(|e| {
-                    error!("Could not load headers from database: {}", e);
-                    MainError::Db(e)
-                })?;
+        let tree_info = db::load_treeinfos(db.clone(), network.id, network.first_tracked_height)
+            .await
+            .map_err(|e| {
+                error!("Could not load headers from database: {}", e);
+                MainError::Db(e)
+            })?;
         let tree: Tree = Arc::new(Mutex::new(tree_info));
         cache::populate_cache(&network, &tree, &caches).await;
 
@@ -288,7 +291,8 @@ fn spawn_network_tasks(
                                 }
                                 let header_infos_json = headertree::strip_tree(
                                     &tree_for_receiver,
-                                    network_for_receiver.max_interesting_heights,
+                                    network_for_receiver.visible_heights_from_tip,
+                                    network_for_receiver.extra_hotspot_heights,
                                     network_for_receiver.first_tracked_height,
                                     tip_heights,
                                 )
@@ -391,7 +395,8 @@ fn spawn_network_tasks(
         let tip_heights: BTreeSet<u64> = cache::tip_heights(network_clone.id, &caches_clone).await;
         let interesting_heights = headertree::sorted_interesting_heights(
             &tree_clone,
-            network_clone.max_interesting_heights,
+            network_clone.visible_heights_from_tip,
+            network_clone.extra_hotspot_heights,
             network_clone.first_tracked_height,
             tip_heights,
         )

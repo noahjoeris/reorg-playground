@@ -19,7 +19,8 @@ id = 1 # identifier in DB
 name = "Mainnet"
 description = ""
 first_tracked_height = 0 # lower bound; loads all blocks from this height into the db
-max_interesting_heights = 100 # includes heights with forks, node tip heights, and max height
+visible_heights_from_tip = 100 # base tip window size (heights counted backward from chain tip)
+extra_hotspot_heights = 20 # additional hotspot heights (fork/tip anchors) kept outside the base tip window
 network_type = "Mainnet" # Mainnet | Testnet | Signet | Regtest
 
     [[networks.nodes]]
@@ -63,7 +64,8 @@ name = "testnetwork"
 description = ""
 # Earliest block height this app tracks for headers/forks.
 first_tracked_height = 5 # lower bound; scans from this height to tip
-max_interesting_heights = 200 # includes heights with forks, node tip heights, and max height
+visible_heights_from_tip = 200 # base tip window size (heights counted backward from chain tip)
+extra_hotspot_heights = 40 # additional hotspot heights (fork/tip anchors) kept outside the base tip window
 network_type = "Testnet" # Mainnet | Testnet | Signet | Regtest
 
     [[networks.nodes]]

@@ -67,7 +67,8 @@ struct TomlNetwork {
     name: String,
     description: String,
     first_tracked_height: u64,
-    max_interesting_heights: usize,
+    visible_heights_from_tip: usize,
+    extra_hotspot_heights: usize,
     network_type: Option<NetworkType>,
     nodes: Vec<TomlNode>,
 }
@@ -78,7 +79,8 @@ pub struct Network {
     pub description: String,
     pub name: String,
     pub first_tracked_height: u64,
-    pub max_interesting_heights: usize,
+    pub visible_heights_from_tip: usize,
+    pub extra_hotspot_heights: usize,
     pub network_type: Option<NetworkType>,
     pub nodes: Vec<BoxedSyncSendNode>,
 }
@@ -87,12 +89,13 @@ impl fmt::Display for TomlNetwork {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Network (id={}, description='{}', name='{}', first_tracked_height={}, max_interesting_heights={}, nodes={:?})",
+            "Network (id={}, description='{}', name='{}', first_tracked_height={}, visible_heights_from_tip={}, extra_hotspot_heights={}, nodes={:?})",
             self.id,
             self.description,
             self.name,
             self.first_tracked_height,
-            self.max_interesting_heights,
+            self.visible_heights_from_tip,
+            self.extra_hotspot_heights,
             self.nodes,
         )
     }
@@ -310,7 +313,8 @@ fn parse_toml_network(
         name: toml_network.name.clone(),
         description: toml_network.description.clone(),
         first_tracked_height: toml_network.first_tracked_height,
-        max_interesting_heights: toml_network.max_interesting_heights,
+        visible_heights_from_tip: toml_network.visible_heights_from_tip,
+        extra_hotspot_heights: toml_network.extra_hotspot_heights,
         network_type: toml_network.network_type.clone(),
         nodes,
     })
@@ -394,7 +398,8 @@ mod tests {
             name = ""
             description = ""
             first_tracked_height = 0
-            max_interesting_heights = 0
+            visible_heights_from_tip = 0
+            extra_hotspot_heights = 0
 
                 [[networks.nodes]]
                 id = 0
@@ -437,7 +442,8 @@ mod tests {
             name = ""
             description = ""
             first_tracked_height = 0
-            max_interesting_heights = 0
+            visible_heights_from_tip = 0
+            extra_hotspot_heights = 0
 
                 [[networks.nodes]]
                 id = 0
@@ -452,7 +458,8 @@ mod tests {
             name = ""
             description = ""
             first_tracked_height = 0
-            max_interesting_heights = 0
+            visible_heights_from_tip = 0
+            extra_hotspot_heights = 0
 
                 [[networks.nodes]]
                 id = 0
@@ -486,7 +493,8 @@ mod tests {
             name = ""
             description = ""
             first_tracked_height = 0
-            max_interesting_heights = 0
+            visible_heights_from_tip = 0
+            extra_hotspot_heights = 0
 
                 [[networks.nodes]]
                 id = 123
@@ -526,7 +534,8 @@ mod tests {
             name = ""
             description = ""
             first_tracked_height = 0
-            max_interesting_heights = 0
+            visible_heights_from_tip = 0
+            extra_hotspot_heights = 0
 
                 [[networks.nodes]]
                 id = 421
@@ -548,6 +557,72 @@ mod tests {
             Err(e) => {
                 panic!("Electrum backend config invalid: {}", e);
             }
+        }
+    }
+
+    #[test]
+    fn parses_visible_tip_window_and_hotspot_budget() {
+        match parse_config(
+            r#"
+            database_path = ""
+            query_interval = 15
+            address = "127.0.0.1:2323"
+            rss_base_url = ""
+
+            [[networks]]
+            id = 7
+            name = "example"
+            description = ""
+            first_tracked_height = 111
+            visible_heights_from_tip = 222
+            extra_hotspot_heights = 33
+
+                [[networks.nodes]]
+                id = 1
+                name = "Esplora Node"
+                description = "test"
+                rpc_host = "https://esplora.example.org/api"
+                client_implementation = "esplora"
+        "#,
+        ) {
+            Ok(config) => {
+                let network = &config.networks[0];
+                assert_eq!(network.visible_heights_from_tip, 222);
+                assert_eq!(network.extra_hotspot_heights, 33);
+            }
+            Err(e) => {
+                panic!("new height fields should parse: {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_max_interesting_heights_rejected() {
+        match parse_config(
+            r#"
+            database_path = ""
+            query_interval = 15
+            address = "127.0.0.1:2323"
+            rss_base_url = ""
+
+            [[networks]]
+            id = 1
+            name = "legacy"
+            description = ""
+            first_tracked_height = 0
+            max_interesting_heights = 100
+
+                [[networks.nodes]]
+                id = 1
+                name = "Esplora Node"
+                description = "test"
+                rpc_host = "https://esplora.example.org/api"
+                client_implementation = "esplora"
+        "#,
+        ) {
+            Ok(_) => panic!("legacy max_interesting_heights should fail parsing"),
+            Err(ConfigError::TomlError(_)) => {}
+            Err(e) => panic!("expected TOML parse error for legacy key, got {}", e),
         }
     }
 }

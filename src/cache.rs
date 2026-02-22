@@ -12,15 +12,12 @@ pub const VERSION_UNKNOWN: &str = "unknown";
 pub const MINER_UNKNOWN: &str = "Unknown";
 pub const MAX_FORKS_IN_CACHE: usize = 50;
 
-pub async fn populate_cache(
-    network: &crate::config::Network,
-    tree: &Tree,
-    caches: &Caches,
-) {
+pub async fn populate_cache(network: &crate::config::Network, tree: &Tree, caches: &Caches) {
     let forks = headertree::recent_forks(tree, MAX_FORKS_IN_CACHE).await;
     let hij = headertree::strip_tree(
         tree,
-        network.max_interesting_heights,
+        network.visible_heights_from_tip,
+        network.extra_hotspot_heights,
         network.first_tracked_height,
         BTreeSet::new(),
     )
