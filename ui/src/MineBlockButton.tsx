@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useMineBlock } from '@/hooks/useMineBlock'
 import { cn } from '@/utils'
-import { mineBlock } from './api'
 import type { NodeInfo, ProcessedBlock } from './types'
 
 type MineBlockButtonProps = {
@@ -20,9 +20,8 @@ export function MineBlockButton({
   label = 'Mine Block',
   buttonClassName,
 }: MineBlockButtonProps) {
-  const [loading, setLoading] = useState(false)
+  const { mine, loading, error } = useMineBlock()
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   const activeEntry = block.tipStatuses.find(ts => ts.status === 'active')
   if (!activeEntry) return null
@@ -33,19 +32,8 @@ export function MineBlockButton({
   if (activeNodes.length === 0) return null
 
   const handleMine = async (nodeId: number) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await mineBlock(networkId, nodeId)
-      if (!result.success) {
-        setError(result.error ?? 'Unknown error')
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Network error')
-    } finally {
-      setLoading(false)
-      setDialogOpen(false)
-    }
+    await mine(networkId, nodeId)
+    setDialogOpen(false)
   }
 
   const handleClick = () => {
