@@ -18,6 +18,7 @@ FROM
     headers
 WHERE
     network = ?1
+    AND height >= ?2
 ORDER BY
     height
     ASC
@@ -93,9 +94,13 @@ pub async fn update_miner(db: Db, hash: &BlockHash, miner: String) -> Result<(),
 }
 
 // Loads header and tip information for a specified network from the DB and
-// builds a header-tree from it.
-pub async fn load_treeinfos(db: Db, network: u32) -> Result<TreeInfo, DbError> {
-    let header_infos = load_header_infos(db, network).await?;
+// builds a header-tree from it. Only loads headers at or above first_tracked_height.
+pub async fn load_treeinfos(
+    db: Db,
+    network: u32,
+    first_tracked_height: u64,
+) -> Result<TreeInfo, DbError> {
+    let header_infos = load_header_infos(db, network, first_tracked_height).await?;
 
     let mut graph: DiGraph<HeaderInfo, bool> = DiGraph::new();
     let mut index: HashMap<BlockHash, NodeIndex> = HashMap::new();
@@ -134,15 +139,22 @@ pub async fn load_treeinfos(db: Db, network: u32) -> Result<TreeInfo, DbError> {
     Ok(TreeInfo { graph, index })
 }
 
-async fn load_header_infos(db: Db, network: u32) -> Result<Vec<HeaderInfo>, DbError> {
-    info!("loading headers for network {} from database..", network);
+async fn load_header_infos(
+    db: Db,
+    network: u32,
+    first_tracked_height: u64,
+) -> Result<Vec<HeaderInfo>, DbError> {
+    info!(
+        "loading headers for network {} from database (first_tracked_height={})..",
+        network, first_tracked_height
+    );
     let db_locked = db.lock().await;
 
     let mut stmt = db_locked.prepare(SELECT_STMT_HEADER_HEIGHT)?;
 
     let mut headers: Vec<HeaderInfo> = vec![];
 
-    let mut rows = stmt.query([network.to_string()])?;
+    let mut rows = stmt.query([network.to_string(), first_tracked_height.to_string()])?;
     while let Some(row) = rows.next()? {
         let header_hex: String = row.get(1)?;
         let header_bytes = hex::decode(&header_hex)?;
@@ -161,4 +173,64 @@ async fn load_header_infos(db: Db, network: u32) -> Result<Vec<HeaderInfo>, DbEr
     );
 
     Ok(headers)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitcoincore_rpc::bitcoin::blockdata::block::Header;
+    use bitcoincore_rpc::bitcoin::hashes::Hash;
+    use bitcoincore_rpc::bitcoin::{BlockHash, CompactTarget, TxMerkleNode};
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    fn make_header(prev: BlockHash, height: u64) -> Header {
+        Header {
+            version: bitcoincore_rpc::bitcoin::block::Version::from_consensus(1),
+            prev_blockhash: prev,
+            merkle_root: TxMerkleNode::all_zeros(),
+            time: height as u32,
+            bits: CompactTarget::from_consensus(0x1d00ffff),
+            nonce: height as u32,
+        }
+    }
+
+    fn make_linear_headers(start_height: u64, end_height: u64) -> Vec<HeaderInfo> {
+        let mut headers: Vec<HeaderInfo> = vec![];
+        let mut prev_hash = BlockHash::all_zeros();
+        for height in start_height..=end_height {
+            let header = make_header(prev_hash, height);
+            let hash = header.block_hash();
+            headers.push(HeaderInfo {
+                height,
+                header,
+                miner: String::new(),
+            });
+            prev_hash = hash;
+        }
+        headers
+    }
+
+    #[tokio::test]
+    async fn load_treeinfos_respects_first_tracked_height() {
+        let connection = rusqlite::Connection::open_in_memory().expect("open in-memory sqlite");
+        let db: Db = Arc::new(Mutex::new(connection));
+        setup_db(db.clone()).await.expect("setup db");
+
+        let network_id = 42;
+        let headers = make_linear_headers(100, 110);
+        write_to_db(&headers, db.clone(), network_id)
+            .await
+            .expect("write headers");
+
+        let tree = load_treeinfos(db, network_id, 105)
+            .await
+            .expect("load treeinfos");
+        let heights: Vec<u64> = tree.graph.raw_nodes().iter().map(|n| n.weight.height).collect();
+
+        assert_eq!(tree.graph.node_count(), 6);
+        assert!(heights.iter().all(|h| *h >= 105));
+        assert!(heights.contains(&105));
+        assert!(!heights.contains(&104));
+    }
 }

@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 
-use log::debug;
+use log::{debug, info};
 
 use crate::headertree;
 use crate::types::{
@@ -18,7 +18,20 @@ pub async fn populate_cache(
     caches: &Caches,
 ) {
     let forks = headertree::recent_forks(tree, MAX_FORKS_IN_CACHE).await;
-    let hij = headertree::strip_tree(tree, network.max_interesting_heights, BTreeSet::new()).await;
+    let hij = headertree::strip_tree(
+        tree,
+        network.max_interesting_heights,
+        network.first_tracked_height,
+        BTreeSet::new(),
+    )
+    .await;
+    info!(
+        "populate_cache for network '{}' (id={}): headers_for_api={}, forks={}",
+        network.name,
+        network.id,
+        hij.len(),
+        forks.len(),
+    );
     let mut locked_caches = caches.lock().await;
     let node_data: NodeData = network
         .nodes
