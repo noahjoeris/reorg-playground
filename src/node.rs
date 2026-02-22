@@ -19,6 +19,7 @@ use std::str::FromStr;
 use std::sync::OnceLock;
 use std::thread::sleep;
 use std::time::Duration;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::task;
 
 const DEFAULT_EMPTY_MINER: &str = "";
@@ -64,13 +65,14 @@ pub trait Node: Sync {
         tips: &[ChainTip],
         tree: &Tree,
         first_tracked_height: u64,
+        progress_tx: Option<&UnboundedSender<Vec<HeaderInfo>>>,
     ) -> Result<(Vec<HeaderInfo>, Vec<BlockHash>), FetchError> {
         let mut new_headers: Vec<HeaderInfo> = Vec::new();
         let mut headers_needing_miners: Vec<BlockHash> = Vec::new();
 
-        let mut active_new_headers: Vec<HeaderInfo> =
-            self.new_active_headers(tips, tree, first_tracked_height)
-                .await?;
+        let mut active_new_headers: Vec<HeaderInfo> = self
+            .new_active_headers(tips, tree, first_tracked_height, progress_tx)
+            .await?;
         // We only want miners for active headers if they are (smaller) tip updates.
         if active_new_headers.len() <= 20 {
             for h in active_new_headers.iter() {
@@ -80,7 +82,7 @@ pub trait Node: Sync {
         new_headers.append(&mut active_new_headers);
 
         let mut nonactive_new_headers: Vec<HeaderInfo> = self
-            .new_nonactive_headers(tips, tree, first_tracked_height)
+            .new_nonactive_headers(tips, tree, first_tracked_height, progress_tx)
             .await?;
         // We want miners for all headers in a non-active chain.
         for h in nonactive_new_headers.iter() {
@@ -95,6 +97,7 @@ pub trait Node: Sync {
         tips: &[ChainTip],
         tree: &Tree,
         first_tracked_height: u64,
+        progress_tx: Option<&UnboundedSender<Vec<HeaderInfo>>>,
     ) -> Result<Vec<HeaderInfo>, FetchError> {
         let mut new_headers: Vec<HeaderInfo> = Vec::new();
 
@@ -112,6 +115,8 @@ pub trait Node: Sync {
         };
         const STEP_SIZE: i64 = 2000;
         let mut query_height: i64 = active_tip.height as i64;
+        // Buffer for non-batch mode to avoid sending one header at a time
+        let mut rpc_buffer: Vec<HeaderInfo> = Vec::new();
         loop {
             match self.capabilities().batch_header_fetch {
                 true => {
@@ -129,6 +134,7 @@ pub trait Node: Sync {
                         .batch_header_fetch(header_hash, start_height as u64, STEP_SIZE as u64)
                         .await?;
 
+                    let mut batch_new: Vec<HeaderInfo> = Vec::new();
                     // zip heights and headers up and to iterate through them by descending height
                     // newest first
                     for height_header_pair in headers
@@ -140,13 +146,22 @@ pub trait Node: Sync {
                             .index
                             .contains_key(&height_header_pair.0.block_hash())
                         {
-                            new_headers.push(HeaderInfo {
+                            let header_info = HeaderInfo {
                                 header: *height_header_pair.0,
                                 height: height_header_pair.1 as u64,
                                 miner: DEFAULT_EMPTY_MINER.to_string(),
-                            });
+                            };
+                            batch_new.push(header_info.clone());
+                            new_headers.push(header_info);
                         } else {
                             already_knew_a_header = true;
+                        }
+                    }
+
+                    // Send this batch's new headers for incremental processing
+                    if !batch_new.is_empty() {
+                        if let Some(tx) = progress_tx {
+                            let _ = tx.send(batch_new);
                         }
                     }
 
@@ -176,11 +191,21 @@ pub trait Node: Sync {
                             header = self.block_header_height(query_height as u64).await?;
                         }
                     }
-                    new_headers.push(HeaderInfo {
+                    let header_info = HeaderInfo {
                         height: query_height as u64,
                         header,
                         miner: DEFAULT_EMPTY_MINER.to_string(),
-                    });
+                    };
+                    rpc_buffer.push(header_info.clone());
+                    new_headers.push(header_info);
+
+                    // Send buffered headers every 10 fetches for incremental display
+                    if rpc_buffer.len() >= 10 {
+                        if let Some(tx) = progress_tx {
+                            let _ = tx.send(rpc_buffer.drain(..).collect());
+                        }
+                    }
+
                     query_height -= 1;
                 }
             }
@@ -189,6 +214,14 @@ pub trait Node: Sync {
                 break;
             }
         }
+
+        // Flush any remaining buffered headers
+        if !rpc_buffer.is_empty() {
+            if let Some(tx) = progress_tx {
+                let _ = tx.send(rpc_buffer);
+            }
+        }
+
         new_headers.sort_by_key(|h| h.height);
         Ok(new_headers)
     }
@@ -198,6 +231,7 @@ pub trait Node: Sync {
         tips: &[ChainTip],
         tree: &Tree,
         first_tracked_height: u64,
+        progress_tx: Option<&UnboundedSender<Vec<HeaderInfo>>>,
     ) -> Result<Vec<HeaderInfo>, FetchError> {
         let mut new_headers: Vec<HeaderInfo> = Vec::new();
 
@@ -217,6 +251,7 @@ pub trait Node: Sync {
                 FetchError::DataError(format!("Invalid block hash '{}': {}", inactive_tip.hash, e))
             })?;
             let mut next_header = tip_hash;
+            let mut branch_headers: Vec<HeaderInfo> = Vec::new();
             for i in 0..=inactive_tip.branchlen {
                 {
                     let tree_locked = tree.lock().await;
@@ -232,12 +267,20 @@ pub trait Node: Sync {
                 );
 
                 let header = self.block_header_hash(&next_header).await?;
-                new_headers.push(HeaderInfo {
+                let header_info = HeaderInfo {
                     height,
                     header,
                     miner: DEFAULT_EMPTY_MINER.to_string(),
-                });
+                };
+                branch_headers.push(header_info.clone());
+                new_headers.push(header_info);
                 next_header = header.prev_blockhash;
+            }
+            // Send each fork branch's headers for incremental processing
+            if !branch_headers.is_empty() {
+                if let Some(tx) = progress_tx {
+                    let _ = tx.send(branch_headers);
+                }
             }
         }
         Ok(new_headers)

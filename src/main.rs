@@ -233,8 +233,88 @@ fn spawn_network_tasks(
                 tips.sort();
 
                 if last_tips != tips {
-                    let (new_headers, miners_needed): (Vec<HeaderInfo>, Vec<BlockHash>) = match node
-                        .new_headers(&tips, &tree_clone, network.first_tracked_height)
+                    // Set up a channel for incremental header processing.
+                    // As headers are fetched from RPC, they are sent through this
+                    // channel and processed (inserted into tree, written to DB,
+                    // and broadcast via SSE) so the UI updates live.
+                    let (progress_tx, mut progress_rx) = unbounded_channel::<Vec<HeaderInfo>>();
+                    let tree_for_receiver = tree_clone.clone();
+                    let db_for_receiver = db_write.clone();
+                    let caches_for_receiver = caches_clone.clone();
+                    let cache_changed_tx_for_receiver = cache_changed_tx_cloned.clone();
+                    let network_for_receiver = network.clone();
+                    let tips_for_receiver = tips.clone();
+
+                    let receiver_handle = task::spawn(async move {
+                        let mut total_written: usize = 0;
+                        while let Some(batch) = progress_rx.recv().await {
+                            if batch.is_empty() {
+                                continue;
+                            }
+                            let tree_changed =
+                                headertree::insert_headers(&tree_for_receiver, &batch).await;
+
+                            match db::write_to_db(
+                                &batch,
+                                db_for_receiver.clone(),
+                                network_for_receiver.id,
+                            )
+                            .await
+                            {
+                                Ok(_) => {
+                                    total_written += batch.len();
+                                }
+                                Err(e) => {
+                                    error!(
+                                        "Could not write headers for network '{}' to database: {}",
+                                        network_for_receiver.name, e
+                                    );
+                                }
+                            }
+
+                            if tree_changed {
+                                let mut tip_heights: BTreeSet<u64> = cache::tip_heights(
+                                    network_for_receiver.id,
+                                    &caches_for_receiver,
+                                )
+                                .await;
+                                for tip in tips_for_receiver.iter() {
+                                    tip_heights.insert(tip.height);
+                                }
+                                let header_infos_json = headertree::strip_tree(
+                                    &tree_for_receiver,
+                                    network_for_receiver.max_interesting_heights,
+                                    tip_heights,
+                                )
+                                .await;
+                                let forks = headertree::recent_forks(
+                                    &tree_for_receiver,
+                                    MAX_FORKS_IN_CACHE,
+                                )
+                                .await;
+
+                                update_cache(
+                                    &caches_for_receiver,
+                                    network_for_receiver.id,
+                                    CacheUpdate::HeaderTree {
+                                        header_infos_json,
+                                        forks,
+                                    },
+                                    &cache_changed_tx_for_receiver,
+                                )
+                                .await;
+                            }
+                        }
+                        total_written
+                    });
+
+                    let (_, miners_needed): (Vec<HeaderInfo>, Vec<BlockHash>) = match node
+                        .new_headers(
+                            &tips,
+                            &tree_clone,
+                            network.first_tracked_height,
+                            Some(&progress_tx),
+                        )
                         .await
                     {
                         Ok(headers) => headers,
@@ -250,6 +330,24 @@ fn spawn_network_tasks(
                         }
                     };
 
+                    // Drop sender so receiver loop terminates
+                    drop(progress_tx);
+                    match receiver_handle.await {
+                        Ok(total_written) => {
+                            if total_written > 0 {
+                                info!(
+                                    "Written {} headers to database for network '{}' by node {}",
+                                    total_written,
+                                    network.name,
+                                    node.info()
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            error!("Header processing task failed: {}", e);
+                        }
+                    }
+
                     for hash in miners_needed.iter() {
                         if let Err(e) = miner_id_tx_clone.send(*hash) {
                             error!(
@@ -260,29 +358,6 @@ fn spawn_network_tasks(
                     }
 
                     last_tips = tips.clone();
-                    let db_write = db_write.clone();
-                    let mut tree_changed = false;
-                    if !new_headers.is_empty() {
-                        tree_changed = headertree::insert_headers(&tree_clone, &new_headers).await;
-
-                        match db::write_to_db(&new_headers, db_write, network.id).await {
-                            Ok(_) => info!(
-                                "Written {} headers to database for network '{}' by node {}",
-                                new_headers.len(),
-                                network.name,
-                                node.info()
-                            ),
-                            Err(e) => {
-                                error!(
-                                    "Could not write new headers for network '{}' by node {} to database: {}",
-                                    network.name,
-                                    node.info(),
-                                    e
-                                );
-                                return MainError::Db(e);
-                            }
-                        }
-                    }
 
                     update_cache(
                         &caches_clone,
@@ -294,32 +369,6 @@ fn spawn_network_tasks(
                         &cache_changed_tx_cloned,
                     )
                     .await;
-
-                    if tree_changed {
-                        let mut tip_heights: BTreeSet<u64> =
-                            cache::tip_heights(network.id, &caches_clone).await;
-                        for tip in tips.iter() {
-                            tip_heights.insert(tip.height);
-                        }
-                        let header_infos_json = headertree::strip_tree(
-                            &tree_clone,
-                            network.max_interesting_heights,
-                            tip_heights,
-                        )
-                        .await;
-                        let forks = headertree::recent_forks(&tree_clone, MAX_FORKS_IN_CACHE).await;
-
-                        update_cache(
-                            &caches_clone,
-                            network.id,
-                            CacheUpdate::HeaderTree {
-                                header_infos_json,
-                                forks,
-                            },
-                            &cache_changed_tx_cloned,
-                        )
-                        .await;
-                    }
                 }
             }
         });

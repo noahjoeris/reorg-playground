@@ -27,7 +27,7 @@ function SectionLabel({ children }: { children: string }) {
 
 function FieldRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="grid grid-cols-[7.25rem_minmax(0,1fr)] items-start gap-3 py-2.5 sm:grid-cols-[9rem_minmax(0,1fr)]">
+    <div className="grid grid-cols-[6rem_minmax(0,1fr)] items-start gap-2 py-1.5 sm:grid-cols-[7.5rem_minmax(0,1fr)]">
       <dt className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</dt>
       <dd className={['wrap-break-word text-foreground', mono ? 'font-mono text-xs' : 'text-sm'].join(' ')}>{value}</dd>
     </div>
@@ -48,10 +48,10 @@ function CopyableRow({
   onCopy: (id: string, value: string) => void
 }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 py-3">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 py-2">
       <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
-        <p className="mt-1 break-all font-mono text-xs text-foreground">{value}</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+        <p className="mt-0.5 break-all font-mono text-xs text-foreground">{value}</p>
       </div>
       <Button
         variant="outline"
@@ -90,9 +90,9 @@ export function BlockDetailPanel({ block, onClose }: { block: ProcessedBlock; on
     >
       <SheetContent
         side="right"
-        className="w-full overflow-y-auto border-l border-accent/25 [background:var(--surface-panel-strong)] shadow-(--elevation-lift) backdrop-blur-md sm:max-w-2xl"
+        className="w-full overflow-y-auto border-l border-accent/25 [background:var(--surface-panel-strong)] shadow-(--elevation-lift) backdrop-blur-md sm:max-w-xl"
       >
-        <SheetHeader className="border-b border-border/80 pb-3">
+        <SheetHeader className="border-b border-border/80 pb-2">
           <SectionLabel>Block Detail</SectionLabel>
           <SheetTitle className="text-base tracking-tight sm:text-lg">Height #{block.height}</SheetTitle>
           <SheetDescription className="truncate font-mono text-xs" title={block.hash}>
@@ -100,8 +100,8 @@ export function BlockDetailPanel({ block, onClose }: { block: ProcessedBlock; on
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex-1 space-y-6 p-4">
-          <section className="space-y-2">
+        <div className="flex-1 space-y-4 p-3">
+          <section className="space-y-1.5">
             <SectionLabel>Summary</SectionLabel>
             <dl className="divide-y divide-border/60 border-y border-border/60">
               <FieldRow label="Timestamp" value={formatBlockTime(block.time)} />
@@ -111,7 +111,7 @@ export function BlockDetailPanel({ block, onClose }: { block: ProcessedBlock; on
             </dl>
           </section>
 
-          <section className="space-y-3">
+          <section className="space-y-1.5">
             <SectionLabel>Block Hashes</SectionLabel>
             <div className="divide-y divide-border/60 border-y border-border/60">
               <CopyableRow
@@ -138,7 +138,7 @@ export function BlockDetailPanel({ block, onClose }: { block: ProcessedBlock; on
             </div>
           </section>
 
-          <section className="space-y-2">
+          <section className="space-y-1.5">
             <SectionLabel>Header Fields</SectionLabel>
             <dl className="divide-y divide-border/60 border-y border-border/60">
               <FieldRow label="Version" value={toHex(block.version)} mono />
@@ -148,11 +148,11 @@ export function BlockDetailPanel({ block, onClose }: { block: ProcessedBlock; on
           </section>
 
           {block.tipStatuses.length > 0 && (
-            <section className="space-y-2">
+            <section className="space-y-1.5">
               <SectionLabel>Tip Status</SectionLabel>
               <ul className="divide-y divide-border/60 border-y border-border/60">
                 {block.tipStatuses.map(tipStatus => (
-                  <li key={tipStatus.status} className="flex items-start gap-2 py-2.5">
+                  <li key={tipStatus.status} className="flex items-start gap-2 py-1.5">
                     <span
                       className="mt-1 h-2 w-2 shrink-0 rounded-full ring-1 ring-background/70"
                       style={{ backgroundColor: TIP_STATUS_COLORS[tipStatus.status] }}

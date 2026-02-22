@@ -84,7 +84,7 @@ export function useNetworkData(networkId: number | null) {
       }
 
       if (debounceRef.current) clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(() => loadData(false), 500)
+      debounceRef.current = setTimeout(() => loadData(false), 150)
     })
 
     return () => {
