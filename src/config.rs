@@ -149,10 +149,9 @@ impl FromStr for Backend {
     type Err = ConfigError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
+        let s = s.trim().to_lowercase().replace([' ', '_', '-'], "");
+        match s.as_str() {
             "bitcoincore" => Ok(Backend::BitcoinCore),
-            "bitcoin core" => Ok(Backend::BitcoinCore),
-            "core" => Ok(Backend::BitcoinCore),
             "btcd" => Ok(Backend::Btcd),
             "esplora" => Ok(Backend::Esplora),
             "electrum" => Ok(Backend::Electrum),
