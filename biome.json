@@ -12,6 +12,7 @@
       "**/*.jsx",
       "**/*.ts",
       "**/*.tsx",
+      "**/*.css",
       "**/*.json",
       "**/*.jsonc",
       "**/*.mjs",
@@ -74,6 +75,11 @@
       "bracketSpacing": true,
       "bracketSameLine": false,
       "attributePosition": "auto"
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
     }
   },
   "assist": {
