@@ -1,6 +1,7 @@
 import { MiniMap, type Node, ReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -172,11 +173,17 @@ function App() {
         <header className="px-2.5 pt-2 pb-1.5 sm:px-3.5 sm:pt-2.5 lg:px-5 lg:pt-3">
           <div className={`${panelGlassStrongClass} rounded-2xl px-3 py-2 sm:px-4 sm:py-2.5`}>
             <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <h1 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">Reorg Playground</h1>
-                <p className="mt-0.5 hidden max-w-2xl text-xs leading-relaxed text-muted-foreground sm:block">
-                  Watch how nodes perceive forks, tips, and reorg events in real time.
-                </p>
+              <div className="flex min-w-0 items-center gap-2.5">
+                <Avatar className="size-16 sm:size-16">
+                  <AvatarImage src="/logo.webp" alt="Reorg Playground logo" className="object-cover" />
+                  <AvatarFallback className="rounded-lg">RP</AvatarFallback>
+                </Avatar>
+                <div>
+                  <h1 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">Reorg Playground</h1>
+                  <p className="mt-0.5 hidden max-w-2xl text-xs leading-relaxed text-muted-foreground sm:block">
+                    Watch how nodes perceive forks, tips, and reorg events in real time.
+                  </p>
+                </div>
               </div>
 
               <div className="flex shrink-0 items-center gap-2">
