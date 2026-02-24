@@ -305,7 +305,7 @@ function App() {
                     bgColor="var(--muted)"
                     inversePan
                     maskColor="color-mix(in srgb, var(--muted) 50%, transparent)"
-                    className="rounded-2xl border border-border"
+                    className="hidden rounded-2xl border border-border md:block"
                   />
                   <Controls showInteractive={false} showZoom={false} />
                   {showFoldToggle && (

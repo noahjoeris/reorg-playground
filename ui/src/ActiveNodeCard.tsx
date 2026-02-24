@@ -103,7 +103,7 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
 
   return (
     <section className="px-3 pb-1.5 sm:px-4 lg:px-5" aria-label="Node health panel">
-      <div className="flex gap-2.5 overflow-x-auto overscroll-x-contain pb-1.5">
+      <div className="flex flex-col gap-2.5 pb-1.5 md:flex-row md:overflow-x-auto md:overscroll-x-contain">
         {sortedNodes.map(node => {
           const currentActiveTip = activeTip(node)
           const activeHeight = currentActiveTip?.height ?? 0
@@ -115,7 +115,7 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
             <Card
               key={node.id}
               className={[
-                `${panelGlassClass} min-w-56 shrink-0 gap-0 rounded-2xl py-0 sm:min-w-64`,
+                `${panelGlassClass} w-full min-w-0 gap-0 rounded-2xl py-0 md:w-auto md:min-w-64 md:shrink-0`,
                 'transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5',
                 'hover:border-accent/35 hover:shadow-(--elevation-lift)',
                 !node.reachable && 'border-destructive/40 bg-destructive/8',
@@ -131,7 +131,7 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
                       {node.name}
                     </CardTitle>
                     <p
-                      className="mt-0.5 hidden truncate text-xs font-medium text-muted-foreground sm:block"
+                      className="mt-0.5 hidden truncate text-xs font-medium text-muted-foreground md:block"
                       title={node.description}
                     >
                       {node.description || 'No description'}
@@ -162,10 +162,10 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
                   <NodeMetric label="Tips" value={node.tips.length} />
                 </dl>
 
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <p className="truncate rounded-md border border-border/70 bg-background/60 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                      <p className="min-w-0 flex-1 truncate rounded-md border border-border/70 bg-background/60 px-2 py-1 font-mono text-[11px] text-muted-foreground">
                         {activeHash ? shortHash(activeHash, 8, 8) : 'No active tip'}
                       </p>
                     </TooltipTrigger>
@@ -184,20 +184,20 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
                 {statusSummary.length > 0 && (
                   <ul className="flex flex-wrap gap-1.5">
                     {statusSummary.map(([status, count]) => (
-                      <li key={status}>
+                      <li key={status} className="max-w-full">
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Badge
                               variant="outline"
-                              className="inline-flex items-center gap-1.5 rounded-full bg-background/65 font-normal text-muted-foreground"
+                              className="inline-flex max-w-full w-auto shrink items-center justify-start gap-1.5 rounded-full bg-background/65 text-left font-normal whitespace-normal break-words text-muted-foreground"
                             >
                               <span
-                                className="h-1.5 w-1.5 rounded-full ring-1 ring-background/70"
+                                className="h-1.5 w-1.5 shrink-0 rounded-full ring-1 ring-background/70"
                                 style={{ backgroundColor: TIP_STATUS_COLORS[status] }}
                                 aria-hidden="true"
                               />
-                              {TIP_STATUS_LABELS[status]}
-                              <span className="rounded-full bg-muted px-1 text-[10px]">{count}</span>
+                              <span className="min-w-0 break-words">{TIP_STATUS_LABELS[status]}</span>
+                              <span className="shrink-0 rounded-full bg-muted px-1 text-[10px]">{count}</span>
                             </Badge>
                           </TooltipTrigger>
                           <TooltipContent className="max-w-64">{TIP_STATUS_DESCRIPTIONS[status]}</TooltipContent>
