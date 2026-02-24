@@ -179,7 +179,9 @@ function App() {
                   <AvatarFallback className="rounded-lg">RP</AvatarFallback>
                 </Avatar>
                 <div>
-                  <h1 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">Reorg Playground</h1>
+                  <h1 className="[font-family:var(--font-display)] text-lg font-semibold tracking-[0.02em] text-foreground sm:text-xl">
+                    Reorg Playground
+                  </h1>
                   <p className="mt-0.5 hidden max-w-2xl text-xs leading-relaxed text-muted-foreground sm:block">
                     Watch how nodes perceive forks, tips, and reorg events in real time.
                   </p>
