@@ -1,4 +1,4 @@
-import { MiniMap, type Node, ReactFlow } from '@xyflow/react'
+import { Controls, MiniMap, type Node, Panel, ReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -11,18 +11,25 @@ import { ActiveNodeInfoCard } from './ActiveNodeCard'
 import { BlockDetailPanel } from './BlockDetailPanel'
 import { BlockTreeNode } from './BlockTreeNode'
 import { ConnectionStatus } from './ConnectionStatus'
+import { FoldedBlockTreeNode } from './FoldedBlockTreeNode'
 import { MineTreeNode } from './MineTreeNode'
 import { NetworkSelector } from './NetworkSelector'
 import { ThemeToggle } from './ThemeToggle'
-import { buildReactFlowGraph, type FlowNodeType, preprocessData } from './tree'
+import { buildReactFlowGraph, type FlowNodeType, type FoldMetadata, preprocessData } from './tree'
 import { TIP_STATUS_COLORS, type TipStatusEntry } from './types'
 
-const nodeTypes = { block: BlockTreeNode, mine: MineTreeNode }
+const nodeTypes = { block: BlockTreeNode, mine: MineTreeNode, folded: FoldedBlockTreeNode }
 const panelGlassClass =
   '[background:var(--surface-panel)] border border-border/70 shadow-[var(--elevation-soft)] backdrop-blur-[10px]'
 const panelGlassStrongClass =
   '[background:var(--surface-panel-strong)] border border-accent/25 shadow-[var(--elevation-lift)] backdrop-blur-[12px]'
 const metricPillClass = 'rounded-full border border-border/80 bg-card/70 px-2.5 py-[3px] text-[11px] tracking-[0.02em]'
+
+const EMPTY_FOLD_META: FoldMetadata = {
+  potentialFoldedSegmentCount: 0,
+  activeFoldedSegmentCount: 0,
+  hiddenBlockIds: new Set<number>(),
+}
 
 function getNetworkIdFromUrl(): number | null {
   const params = new URLSearchParams(window.location.search)
@@ -60,6 +67,7 @@ function App() {
   const [selectedNetworkId, setSelectedNetworkId] = useState<number | null>(getNetworkIdFromUrl)
   const [selectedBlockId, setSelectedBlockId] = useState<number | null>(null)
   const [isNodePanelCollapsed, setIsNodePanelCollapsed] = useState(false)
+  const [globalCollapsed, setGlobalCollapsed] = useState(true)
 
   useEffect(() => {
     if (selectedNetworkId !== null) return
@@ -76,6 +84,7 @@ function App() {
     setSelectedNetworkId(id)
     setNetworkIdInUrl(id)
     setSelectedBlockId(null)
+    setGlobalCollapsed(true)
   }, [])
 
   const { data, loading: dataLoading, error: dataError, connectionStatus } = useNetworkData(selectedNetworkId)
@@ -103,9 +112,9 @@ function App() {
     return networks.find(n => n.id === selectedNetworkId) ?? null
   }, [networks, selectedNetworkId])
 
-  const { nodes, edges } = useMemo(() => {
+  const { nodes, edges, foldMeta } = useMemo(() => {
     if (processedBlocks.length === 0) {
-      return { nodes: [] as FlowNodeType[], edges: [] }
+      return { nodes: [] as FlowNodeType[], edges: [], foldMeta: EMPTY_FOLD_META }
     }
 
     return buildReactFlowGraph(
@@ -115,8 +124,16 @@ function App() {
       selectedNetworkId,
       selectedNetwork?.network_type ?? null,
       data?.nodes ?? [],
+      globalCollapsed,
     )
-  }, [processedBlocks, handleBlockClick, selectedBlockId, selectedNetworkId, selectedNetwork, data])
+  }, [processedBlocks, handleBlockClick, selectedBlockId, selectedNetworkId, selectedNetwork, data, globalCollapsed])
+
+  // Clear selection if the selected block is hidden by folding
+  useEffect(() => {
+    if (selectedBlockId !== null && foldMeta.hiddenBlockIds.has(selectedBlockId)) {
+      setSelectedBlockId(null)
+    }
+  }, [selectedBlockId, foldMeta.hiddenBlockIds])
 
   const minimapNodeColor = useCallback((node: Node) => {
     if (node.type === 'block') {
@@ -126,6 +143,7 @@ function App() {
       }
     }
     if (node.type === 'mine') return 'var(--accent)'
+    if (node.type === 'folded') return 'var(--muted-foreground)'
     return 'var(--foreground)'
   }, [])
 
@@ -166,6 +184,7 @@ function App() {
   const totalNodes = data?.nodes.length ?? 0
   const reachableNodes = data?.nodes.filter(node => node.reachable).length ?? 0
   const showNodePanelToggle = Boolean(data)
+  const showFoldToggle = foldMeta.potentialFoldedSegmentCount > 0
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -288,13 +307,31 @@ function App() {
                     maskColor="color-mix(in srgb, var(--muted) 50%, transparent)"
                     className="rounded-2xl border border-border"
                   />
+                  <Controls />
+                  {showFoldToggle && (
+                    <Panel position="top-right" className="m-2">
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant="outline"
+                        className="rounded-full border-border/80 bg-card/90 px-3 font-semibold backdrop-blur"
+                        onClick={() => setGlobalCollapsed(current => !current)}
+                        aria-label={globalCollapsed ? 'Expand all folded blocks' : 'Collapse uninteresting blocks'}
+                        title={globalCollapsed ? 'Expand all' : 'Collapse all'}
+                      >
+                        {globalCollapsed ? 'Expand all' : 'Collapse all'}
+                      </Button>
+                    </Panel>
+                  )}
                 </ReactFlow>
               )}
             </div>
           </div>
         </main>
 
-        {selectedBlock && <BlockDetailPanel block={selectedBlock} onClose={() => setSelectedBlockId(null)} />}
+        {selectedBlock && !foldMeta.hiddenBlockIds.has(selectedBlockId!) && (
+          <BlockDetailPanel block={selectedBlock} onClose={() => setSelectedBlockId(null)} />
+        )}
       </div>
     </TooltipProvider>
   )
