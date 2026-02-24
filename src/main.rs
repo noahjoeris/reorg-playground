@@ -215,13 +215,14 @@ fn spawn_network_tasks(
                         tips
                     }
                     Err(e) => {
-                        error!(
-                            "Could not fetch chaintips from {} on network '{}' (id={}): {:?}",
-                            node.info(),
-                            network.name,
-                            network.id,
-                            e
-                        );
+                            error!(
+                                "Could not fetch chaintips from {} (endpoint={}) on network '{}' (id={}): {:?}",
+                                node.info(),
+                                node.endpoint(),
+                                network.name,
+                                network.id,
+                                e
+                            );
                         if is_node_reachable(&caches_clone, network.id, node.info().id).await {
                             update_cache(
                                 &caches_clone,
@@ -330,8 +331,9 @@ fn spawn_network_tasks(
                         Ok(headers) => headers,
                         Err(e) => {
                             error!(
-                                "Could not fetch headers from {} on network '{}' (id={}): {}",
+                                "Could not fetch headers from {} (endpoint={}) on network '{}' (id={}): {}",
                                 node.info(),
+                                node.endpoint(),
                                 network.name,
                                 network.id,
                                 e

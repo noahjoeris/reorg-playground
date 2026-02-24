@@ -14,6 +14,7 @@ pub enum FetchError {
     EsploraREST(EsploraRESTError),
     MinReq(minreq::Error),
     DataError(String),
+    NotSupported { node: String, operation: &'static str },
     ElectrumClient(electrum_client::Error),
 }
 
@@ -27,6 +28,9 @@ impl fmt::Display for FetchError {
             FetchError::EsploraREST(e) => write!(f, "Esplora REST Error: {}", e),
             FetchError::MinReq(e) => write!(f, "MinReq HTTP GET request error: {:?}", e),
             FetchError::DataError(e) => write!(f, "Invalid data response error {}", e),
+            FetchError::NotSupported { node, operation } => {
+                write!(f, "Operation '{}' is not supported by node '{}'", operation, node)
+            }
             FetchError::ElectrumClient(e) => write!(f, "Electrum client error {}", e),
         }
     }
@@ -43,6 +47,7 @@ impl error::Error for FetchError {
             FetchError::MinReq(ref e) => Some(e),
             FetchError::ElectrumClient(ref e) => Some(e),
             FetchError::DataError(_) => None,
+            FetchError::NotSupported { .. } => None,
         }
     }
 }
@@ -253,14 +258,12 @@ impl From<ConfigError> for MainError {
 #[derive(Debug)]
 pub enum EsploraRESTError {
     Http(String),
-    NotImplemented,
 }
 
 impl fmt::Display for EsploraRESTError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             EsploraRESTError::Http(s) => write!(f, "HTTP error: {}", s),
-            EsploraRESTError::NotImplemented => write!(f, "Not implemented"),
         }
     }
 }
@@ -269,7 +272,6 @@ impl error::Error for EsploraRESTError {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {
             EsploraRESTError::Http(_) => None,
-            EsploraRESTError::NotImplemented => None,
         }
     }
 }

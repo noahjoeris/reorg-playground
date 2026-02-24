@@ -37,7 +37,13 @@ pub async fn populate_cache(network: &crate::config::Network, tree: &Tree, cache
         .map(|n| {
             (
                 n.info().id,
-                NodeDataJson::new(n.info(), &[], VERSION_UNKNOWN.to_string(), 0, true),
+                NodeDataJson::new(
+                    n.info().clone(),
+                    &[],
+                    VERSION_UNKNOWN.to_string(),
+                    0,
+                    true,
+                ),
             )
         })
         .collect();

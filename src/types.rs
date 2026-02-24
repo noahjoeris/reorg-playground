@@ -10,8 +10,8 @@ use bitcoincore_rpc::bitcoin::hashes::hex::parse::HexToArrayError;
 use crate::config::{Network, NetworkType};
 use crate::node::NodeInfo;
 
-use bitcoincore_rpc::bitcoin::blockdata::block::Header;
 use bitcoincore_rpc::bitcoin::BlockHash;
+use bitcoincore_rpc::bitcoin::blockdata::block::Header;
 use bitcoincore_rpc::json::{GetChainTipsResultStatus, GetChainTipsResultTip};
 use log::warn;
 use petgraph::graph::DiGraph;
@@ -205,14 +205,19 @@ pub struct DataChanged {
 
 #[derive(Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ChainTipStatus {
+    /// This is the tip of the active main chain, which is certainly valid
     #[serde(rename = "active")]
     Active,
+    /// The branch contains at least one invalid block
     #[serde(rename = "invalid")]
     Invalid,
+    /// This branch is not part of the active chain, but is fully validated
     #[serde(rename = "valid-fork")]
     ValidFork,
+    /// Not all blocks for this branch are available, but the headers are valid
     #[serde(rename = "headers-only")]
     HeadersOnly,
+    /// All blocks are available for this branch, but they were never fully validated
     #[serde(rename = "valid-headers")]
     ValidHeaders,
     Unknown,
