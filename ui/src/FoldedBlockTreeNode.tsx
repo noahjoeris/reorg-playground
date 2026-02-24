@@ -19,9 +19,6 @@ function FoldedBlockTreeNodeComponent({ data }: NodeProps<FoldedBlockTreeNodeTyp
       />
 
       <div className="flex h-24 w-full flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border/60 bg-muted/30 px-3 py-2 text-center backdrop-blur-sm transition-colors duration-200 ease-out">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Heights {data.startHeight}&ndash;{data.endHeight}
-        </p>
         <p className="text-xs font-medium text-muted-foreground">{data.hiddenCount} blocks</p>
       </div>
 

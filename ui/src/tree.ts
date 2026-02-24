@@ -425,6 +425,7 @@ export function buildReactFlowGraph(
     return {
       id: `fold-${seg.id}`,
       type: 'folded' as const,
+      selectable: false,
       position: { x: depth * H_GAP, y: slot * V_GAP + foldedYOffset },
       width: 192,
       height: FOLDED_NODE_HEIGHT,

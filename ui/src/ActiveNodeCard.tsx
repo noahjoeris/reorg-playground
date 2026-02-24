@@ -64,7 +64,7 @@ function NodeMetric({ label, value }: { label: string; value: string | number })
   return (
     <div className="inline-flex items-baseline gap-1 rounded-lg border border-border/75 bg-background/55 px-1.5 py-0.5">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{label}</p>
-      <p className="truncate font-mono text-xs font-semibold text-foreground">{value}</p>
+      <p className="truncate font-mono text-xs font-normal text-foreground">{value}</p>
     </div>
   )
 }

@@ -307,7 +307,7 @@ function App() {
                     maskColor="color-mix(in srgb, var(--muted) 50%, transparent)"
                     className="rounded-2xl border border-border"
                   />
-                  <Controls />
+                  <Controls showInteractive={false} showZoom={false} />
                   {showFoldToggle && (
                     <Panel position="top-right" className="m-2">
                       <Button

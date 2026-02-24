@@ -37,6 +37,7 @@ function BlockTreeNodeComponent({ data, selected }: NodeProps<BlockTreeNodeType>
         aria-label={`Open details for block ${data.height}`}
         className={[
           'relative flex h-36 w-full flex-col overflow-hidden rounded-2xl border border-border/75 bg-muted/45 px-3.5 py-3 text-left dark:border-border/95 dark:bg-card/90',
+          'cursor-pointer',
           'shadow-(--elevation-soft) backdrop-blur-md',
           'transition-[transform,border-color,box-shadow,background] duration-200 ease-out',
           'hover:-translate-y-0.5 hover:shadow-(--elevation-lift)',
