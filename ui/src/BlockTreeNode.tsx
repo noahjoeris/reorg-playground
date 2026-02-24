@@ -1,6 +1,8 @@
 import { Handle, type Node, type NodeProps, Position } from '@xyflow/react'
 import { memo } from 'react'
-import { TIP_STATUS_COLORS, type TipStatusEntry } from './types'
+import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { TIP_STATUS_COLORS, TIP_STATUS_DESCRIPTIONS, TIP_STATUS_LABELS, type TipStatusEntry } from './types'
 import { formatMinerLabel, shortHash } from './utils'
 
 type BlockTreeNodeData = {
@@ -16,9 +18,6 @@ export type BlockTreeNodeType = Node<BlockTreeNodeData, 'block'>
 function BlockTreeNodeComponent({ data, selected }: NodeProps<BlockTreeNodeType>) {
   const truncatedHash = shortHash(data.hash, 10, 8)
   const minerLabel = formatMinerLabel(data.miner)
-  const tipSummary = data.tipStatuses
-    .map(tipStatus => `${tipStatus.status}: ${tipStatus.nodeNames.join(', ')}`)
-    .join('\n')
 
   return (
     <div className="group relative min-w-60 max-w-60">
@@ -64,22 +63,31 @@ function BlockTreeNodeComponent({ data, selected }: NodeProps<BlockTreeNodeType>
         {data.tipStatuses.length > 0 && (
           <ul
             className="mt-auto flex max-w-full flex-nowrap gap-1.5 overflow-hidden pt-2"
-            title={tipSummary}
             aria-label="Tip status overview"
           >
             {data.tipStatuses.map(tipStatus => (
-              <li
-                key={tipStatus.status}
-                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/80 bg-background/75 px-1.5 py-0.5"
-              >
-                <span
-                  className="h-1.5 w-1.5 rounded-full ring-1 ring-background/70"
-                  style={{ backgroundColor: TIP_STATUS_COLORS[tipStatus.status] }}
-                />
-                <span className="text-[10px] font-semibold text-foreground">{tipStatus.status}</span>
-                <span className="rounded-full bg-muted px-1 text-[10px] text-muted-foreground">
-                  {tipStatus.nodeNames.length}
-                </span>
+              <li key={tipStatus.status}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge
+                      variant="outline"
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-background/75 px-1.5 py-0.5"
+                    >
+                      <span
+                        className="h-1.5 w-1.5 rounded-full ring-1 ring-background/70"
+                        style={{ backgroundColor: TIP_STATUS_COLORS[tipStatus.status] }}
+                        aria-hidden="true"
+                      />
+                      <span className="text-[10px] font-semibold text-foreground">
+                        {TIP_STATUS_LABELS[tipStatus.status]}
+                      </span>
+                      <span className="rounded-full bg-muted px-1 text-[10px] text-muted-foreground">
+                        {tipStatus.nodeNames.length}
+                      </span>
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-64">{TIP_STATUS_DESCRIPTIONS[tipStatus.status]}</TooltipContent>
+                </Tooltip>
               </li>
             ))}
           </ul>

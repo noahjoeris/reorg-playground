@@ -2,21 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { type NodeInfo, TIP_STATUS_COLORS, type TipStatus } from './types'
+import { type NodeInfo, TIP_STATUS_COLORS, TIP_STATUS_DESCRIPTIONS, TIP_STATUS_LABELS, type TipStatus } from './types'
 import { shortHash } from './utils'
 
 const RELATIVE_TIME_REFRESH_MS = 10_000
 const panelGlassClass =
   '[background:var(--surface-panel)] border border-border/70 shadow-[var(--elevation-soft)] backdrop-blur-[10px]'
-
-const TIP_STATUS_LABELS: Record<TipStatus, string> = {
-  active: 'Active',
-  invalid: 'Invalid',
-  'valid-fork': 'Valid Fork',
-  'valid-headers': 'Valid Headers',
-  'headers-only': 'Headers Only',
-  unknown: 'Unknown',
-}
 
 function relativeTime(timestamp: number): string {
   const now = Math.floor(Date.now() / 1000)
@@ -194,18 +185,23 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
                   <ul className="flex flex-wrap gap-1.5">
                     {statusSummary.map(([status, count]) => (
                       <li key={status}>
-                        <Badge
-                          variant="outline"
-                          className="inline-flex items-center gap-1.5 rounded-full bg-background/65 font-normal text-muted-foreground"
-                        >
-                          <span
-                            className="h-1.5 w-1.5 rounded-full ring-1 ring-background/70"
-                            style={{ backgroundColor: TIP_STATUS_COLORS[status] }}
-                            aria-hidden="true"
-                          />
-                          {TIP_STATUS_LABELS[status]}
-                          <span className="rounded-full bg-muted px-1 text-[10px]">{count}</span>
-                        </Badge>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge
+                              variant="outline"
+                              className="inline-flex items-center gap-1.5 rounded-full bg-background/65 font-normal text-muted-foreground"
+                            >
+                              <span
+                                className="h-1.5 w-1.5 rounded-full ring-1 ring-background/70"
+                                style={{ backgroundColor: TIP_STATUS_COLORS[status] }}
+                                aria-hidden="true"
+                              />
+                              {TIP_STATUS_LABELS[status]}
+                              <span className="rounded-full bg-muted px-1 text-[10px]">{count}</span>
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-64">{TIP_STATUS_DESCRIPTIONS[status]}</TooltipContent>
+                        </Tooltip>
                       </li>
                     ))}
                   </ul>

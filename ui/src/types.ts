@@ -14,6 +14,24 @@ export const TIP_STATUS_COLORS: Record<TipStatus, string> = {
   unknown: 'var(--color-tip-unknown)',
 }
 
+export const TIP_STATUS_LABELS: Record<TipStatus, string> = {
+  active: 'Active',
+  invalid: 'Invalid',
+  'valid-fork': 'Valid Fork',
+  'valid-headers': 'Valid Headers',
+  'headers-only': 'Headers Only',
+  unknown: 'Unknown',
+}
+
+export const TIP_STATUS_DESCRIPTIONS: Record<TipStatus, string> = {
+  active: 'This is the tip of the active main chain, which is certainly valid.',
+  invalid: 'The branch contains at least one invalid block.',
+  'valid-fork': 'This branch is not part of the active chain, but is fully validated.',
+  'headers-only': 'Not all blocks for this branch are available, but the headers are valid.',
+  'valid-headers': 'All blocks are available for this branch, but they were never fully validated.',
+  unknown: 'Status is unknown.',
+}
+
 export type HeaderInfo = {
   id: number
   prev_id: number
