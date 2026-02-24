@@ -49,7 +49,7 @@ export function MineBlockButton({
       <Button
         variant="outline"
         size="xs"
-        className={cn('w-full rounded-full bg-accent/10 text-accent hover:bg-accent/20', buttonClassName)}
+        className={cn('w-full rounded-full', buttonClassName)}
         onClick={(e: React.MouseEvent) => {
           e.stopPropagation()
           handleClick()

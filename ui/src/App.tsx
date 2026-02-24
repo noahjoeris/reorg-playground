@@ -211,7 +211,7 @@ function App() {
                     type="button"
                     variant="outline"
                     size="xs"
-                    className="rounded-full bg-background/65"
+                    className="rounded-full"
                     onClick={() => setIsNodePanelCollapsed(current => !current)}
                     aria-controls="node-health-panel"
                     aria-expanded={!isNodePanelCollapsed}
