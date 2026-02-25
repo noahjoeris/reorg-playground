@@ -1,19 +1,21 @@
 use std::convert::Infallible;
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::sse::{Event, KeepAlive, Sse},
-    Json,
 };
-use futures_util::stream::Stream;
 use futures_util::StreamExt;
+use futures_util::stream::Stream;
 use log::error;
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::config::NetworkType;
-use crate::types::{AppState, DataChanged, DataJsonResponse, MineAuth, MineableNodeInfo, NetworksJsonResponse};
+use crate::types::{
+    AppState, DataChanged, DataJsonResponse, MineAuth, MineableNodeInfo, NetworksJsonResponse,
+};
 
 pub async fn data_response(
     Path(network): Path<u32>,
@@ -93,8 +95,8 @@ pub async fn mine_block(
     };
 
     match &network_mine_info.network_type {
-        Some(NetworkType::Regtest) => { /* OK */ }
-        Some(NetworkType::Signet) => {
+        NetworkType::Regtest => { /* OK */ }
+        NetworkType::Signet => {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(MineBlockResponse {
@@ -103,7 +105,7 @@ pub async fn mine_block(
                 }),
             );
         }
-        Some(NetworkType::Mainnet) | Some(NetworkType::Testnet) | None => {
+        NetworkType::Mainnet | NetworkType::Testnet => {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(MineBlockResponse {

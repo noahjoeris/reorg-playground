@@ -70,7 +70,7 @@ export type Network = {
   id: number
   name: string
   description: string
-  network_type: NetworkType | null
+  network_type: NetworkType
 }
 
 export type NetworksResponse = {

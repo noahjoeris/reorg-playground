@@ -17,7 +17,6 @@ use crate::types::{MineAuth, MineableNodeInfo, NetworkMineInfo};
 
 pub const ENVVAR_CONFIG_FILE: &str = "CONFIG_FILE";
 const DEFAULT_CONFIG: &str = "config.toml";
-const DEFAULT_BACKEND: Backend = Backend::BitcoinCore;
 const DEFAULT_USE_REST: bool = true;
 const DEFAULT_RPC_PORT: u16 = 8332;
 
@@ -69,7 +68,7 @@ struct TomlNetwork {
     first_tracked_height: u64,
     visible_heights_from_tip: usize,
     extra_hotspot_heights: usize,
-    network_type: Option<NetworkType>,
+    network_type: NetworkType,
     nodes: Vec<TomlNode>,
 }
 
@@ -81,7 +80,7 @@ pub struct Network {
     pub first_tracked_height: u64,
     pub visible_heights_from_tip: usize,
     pub extra_hotspot_heights: usize,
-    pub network_type: Option<NetworkType>,
+    pub network_type: NetworkType,
     pub nodes: Vec<BoxedSyncSendNode>,
 }
 
@@ -112,7 +111,7 @@ struct TomlNode {
     rpc_user: Option<String>,
     rpc_password: Option<String>,
     use_rest: Option<bool>,
-    client_implementation: Option<String>,
+    client_implementation: String,
 }
 
 impl fmt::Display for TomlNode {
@@ -128,9 +127,7 @@ impl fmt::Display for TomlNode {
             self.rpc_user.as_ref().unwrap_or(&"".to_string()),
             self.rpc_cookie_file,
             self.use_rest.unwrap_or(DEFAULT_USE_REST),
-            self.client_implementation
-                .as_ref()
-                .unwrap_or(&"".to_string()),
+            self.client_implementation,
         )
     }
 }
@@ -208,6 +205,8 @@ fn parse_config(config_str: &str) -> Result<Config, ConfigError> {
         let mut mine_nodes: HashMap<u32, MineableNodeInfo> = HashMap::new();
 
         for toml_node in toml_network.nodes.iter() {
+            let backend = toml_node.client_implementation.parse::<Backend>()?;
+
             match parse_toml_node(toml_node) {
                 Ok(node) => {
                     if !node_ids.contains(&node.info().id) {
@@ -229,11 +228,6 @@ fn parse_config(config_str: &str) -> Result<Config, ConfigError> {
             }
 
             // Extract mine connection info for Bitcoin Core nodes
-            let backend = toml_node
-                .client_implementation
-                .as_ref()
-                .and_then(|s| s.parse::<Backend>().ok())
-                .unwrap_or(DEFAULT_BACKEND);
             if matches!(backend, Backend::BitcoinCore) {
                 let port = toml_node.rpc_port.unwrap_or(DEFAULT_RPC_PORT);
                 let auth = if let Some(ref cookie) = toml_node.rpc_cookie_file {
@@ -320,11 +314,7 @@ fn parse_toml_network(
 }
 
 fn parse_toml_node(toml_node: &TomlNode) -> Result<BoxedSyncSendNode, ConfigError> {
-    let client_implementation = toml_node
-        .client_implementation
-        .as_ref()
-        .unwrap_or(&DEFAULT_BACKEND.to_string())
-        .parse::<Backend>()?;
+    let client_implementation = toml_node.client_implementation.parse::<Backend>()?;
 
     let node_info = NodeInfo {
         id: toml_node.id,
@@ -399,6 +389,7 @@ mod tests {
             first_tracked_height = 0
             visible_heights_from_tip = 0
             extra_hotspot_heights = 0
+            network_type = "Regtest"
 
                 [[networks.nodes]]
                 id = 0
@@ -408,6 +399,7 @@ mod tests {
                 rpc_port = 0
                 rpc_user = ""
                 rpc_password = ""
+                client_implementation = "bitcoincore"
 
                 [[networks.nodes]]
                 id = 0
@@ -417,6 +409,7 @@ mod tests {
                 rpc_port = 0
                 rpc_user = ""
                 rpc_password = ""
+                client_implementation = "bitcoincore"
         "#,
         ) {
             // test OK, as we expect this to error
@@ -443,6 +436,7 @@ mod tests {
             first_tracked_height = 0
             visible_heights_from_tip = 0
             extra_hotspot_heights = 0
+            network_type = "Regtest"
 
                 [[networks.nodes]]
                 id = 0
@@ -452,6 +446,7 @@ mod tests {
                 rpc_port = 0
                 rpc_user = ""
                 rpc_password = ""
+                client_implementation = "bitcoincore"
             [[networks]]
             id = 1
             name = ""
@@ -459,6 +454,7 @@ mod tests {
             first_tracked_height = 0
             visible_heights_from_tip = 0
             extra_hotspot_heights = 0
+            network_type = "Regtest"
 
                 [[networks.nodes]]
                 id = 0
@@ -468,6 +464,7 @@ mod tests {
                 rpc_port = 0
                 rpc_user = ""
                 rpc_password = ""
+                client_implementation = "bitcoincore"
         "#,
         ) {
             // test OK, as we expect this to error
@@ -494,6 +491,7 @@ mod tests {
             first_tracked_height = 0
             visible_heights_from_tip = 0
             extra_hotspot_heights = 0
+            network_type = "Mainnet"
 
                 [[networks.nodes]]
                 id = 123
@@ -535,6 +533,7 @@ mod tests {
             first_tracked_height = 0
             visible_heights_from_tip = 0
             extra_hotspot_heights = 0
+            network_type = "Mainnet"
 
                 [[networks.nodes]]
                 id = 421
@@ -575,6 +574,7 @@ mod tests {
             first_tracked_height = 111
             visible_heights_from_tip = 222
             extra_hotspot_heights = 33
+            network_type = "Mainnet"
 
                 [[networks.nodes]]
                 id = 1
@@ -596,6 +596,77 @@ mod tests {
     }
 
     #[test]
+    fn missing_network_type_rejected() {
+        match parse_config(
+            r#"
+            database_path = ""
+            query_interval = 15
+            address = "127.0.0.1:2323"
+            rss_base_url = ""
+
+            [[networks]]
+            id = 1
+            name = "missing-network-type"
+            description = ""
+            first_tracked_height = 0
+            visible_heights_from_tip = 10
+            extra_hotspot_heights = 2
+
+                [[networks.nodes]]
+                id = 1
+                name = "Esplora Node"
+                description = "test"
+                rpc_host = "https://esplora.example.org/api"
+                client_implementation = "esplora"
+        "#,
+        ) {
+            Ok(_) => panic!("missing network_type should fail parsing"),
+            Err(ConfigError::TomlError(_)) => {}
+            Err(e) => panic!(
+                "expected TOML parse error for missing network_type, got {}",
+                e
+            ),
+        }
+    }
+
+    #[test]
+    fn missing_client_implementation_rejected() {
+        match parse_config(
+            r#"
+            database_path = ""
+            query_interval = 15
+            address = "127.0.0.1:2323"
+            rss_base_url = ""
+
+            [[networks]]
+            id = 1
+            name = "missing-impl"
+            description = ""
+            first_tracked_height = 0
+            visible_heights_from_tip = 10
+            extra_hotspot_heights = 2
+            network_type = "Mainnet"
+
+                [[networks.nodes]]
+                id = 1
+                name = "No Impl Node"
+                description = "test"
+                rpc_host = "127.0.0.1"
+                rpc_port = 8332
+                rpc_user = "user"
+                rpc_password = "pass"
+        "#,
+        ) {
+            Ok(_) => panic!("missing client_implementation should fail parsing"),
+            Err(ConfigError::TomlError(_)) => {}
+            Err(e) => panic!(
+                "expected TOML parse error for missing client_implementation, got {}",
+                e
+            ),
+        }
+    }
+
+    #[test]
     fn legacy_max_interesting_heights_rejected() {
         match parse_config(
             r#"
@@ -609,6 +680,7 @@ mod tests {
             name = "legacy"
             description = ""
             first_tracked_height = 0
+            network_type = "Mainnet"
             max_interesting_heights = 100
 
                 [[networks.nodes]]

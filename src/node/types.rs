@@ -10,19 +10,6 @@ pub enum HeaderLocator {
     Hash(BlockHash),
 }
 
-/// Describes which fetch operations a backend implementation supports.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Capabilities {
-    /// True when header lookup by block hash is supported.
-    pub supports_hash_header_lookup: bool,
-    /// True when header lookup by chain height is supported.
-    pub supports_height_header_lookup: bool,
-    /// True when bulk active-chain header retrieval is supported.
-    pub supports_batch_active_headers: bool,
-    /// True when non-active branch header traversal is supported.
-    pub supports_nonactive_headers: bool,
-}
-
 /// Stable metadata used to identify and describe a configured node.
 #[derive(Debug, Hash, Clone, Eq, PartialEq)]
 pub struct NodeInfo {

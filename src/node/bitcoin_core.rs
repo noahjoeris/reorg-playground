@@ -1,10 +1,12 @@
 use crate::error::FetchError;
-use crate::node::{Capabilities, HeaderLocator, Node, NodeInfo};
-use crate::types::ChainTip;
+use crate::node::shared_fetch;
+use crate::node::{ActiveHeadersBatchProvider, HeaderLocator, Node, NodeInfo};
+use crate::types::{ChainTip, HeaderInfo, Tree};
 use async_trait::async_trait;
+use bitcoin_pool_identification::{PoolIdentification, default_data};
 use bitcoincore_rpc::bitcoin;
+use bitcoincore_rpc::bitcoin::BlockHash;
 use bitcoincore_rpc::bitcoin::blockdata::block::Header;
-use bitcoincore_rpc::bitcoin::{BlockHash, Transaction};
 use bitcoincore_rpc::jsonrpc;
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use log::debug;
@@ -79,42 +81,7 @@ impl BitcoinCoreNode {
 }
 
 #[async_trait]
-impl Node for BitcoinCoreNode {
-    fn info(&self) -> &NodeInfo {
-        &self.info
-    }
-
-    fn endpoint(&self) -> &str {
-        &self.rpc_endpoint
-    }
-
-    fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            supports_hash_header_lookup: true,
-            supports_height_header_lookup: false,
-            supports_batch_active_headers: self.use_rest,
-            supports_nonactive_headers: true,
-        }
-    }
-
-    async fn version(&self) -> Result<String, FetchError> {
-        self.with_rpc(|rpc| rpc.get_network_info().map(|info| info.subversion))
-            .await
-    }
-
-    async fn block_hash(&self, height: u64) -> Result<BlockHash, FetchError> {
-        self.with_rpc(move |rpc| rpc.get_block_hash(height)).await
-    }
-
-    async fn block_header(&self, locator: HeaderLocator) -> Result<Header, FetchError> {
-        match locator {
-            HeaderLocator::Hash(hash) => {
-                self.with_rpc(move |rpc| rpc.get_block_header(&hash)).await
-            }
-            HeaderLocator::Height(_) => Err(self.not_supported("block_header(height)")),
-        }
-    }
-
+impl ActiveHeadersBatchProvider for BitcoinCoreNode {
     async fn batch_active_headers(
         &self,
         start_height: u64,
@@ -124,7 +91,9 @@ impl Node for BitcoinCoreNode {
             return Err(self.not_supported("batch_active_headers"));
         }
 
-        let start_hash = self.block_hash(start_height).await?;
+        let start_hash = self
+            .with_rpc(move |rpc| rpc.get_block_hash(start_height))
+            .await?;
         debug!(
             "loading active-chain headers starting from {} ({})",
             start_height, start_hash
@@ -134,8 +103,8 @@ impl Node for BitcoinCoreNode {
         let url = format!("{}/rest/headers/{}/{}.bin", base_url, count, start_hash);
         let request_url = url.clone();
 
-        let res = task::spawn_blocking(move || minreq::get(request_url).with_timeout(8).send())
-            .await??;
+        let res =
+            task::spawn_blocking(move || minreq::get(request_url).with_timeout(8).send()).await??;
 
         if res.status_code != 200 {
             return Err(FetchError::BitcoinCoreREST(format!(
@@ -172,6 +141,34 @@ impl Node for BitcoinCoreNode {
 
         Ok(headers)
     }
+}
+
+#[async_trait]
+impl Node for BitcoinCoreNode {
+    fn info(&self) -> &NodeInfo {
+        &self.info
+    }
+
+    fn endpoint(&self) -> &str {
+        &self.rpc_endpoint
+    }
+
+    async fn version(&self) -> Result<String, FetchError> {
+        self.with_rpc(|rpc| rpc.get_network_info().map(|info| info.subversion))
+            .await
+    }
+
+    async fn block_header(&self, locator: HeaderLocator) -> Result<Header, FetchError> {
+        match locator {
+            HeaderLocator::Hash(hash) => {
+                self.with_rpc(move |rpc| rpc.get_block_header(&hash)).await
+            }
+            HeaderLocator::Height(height) => {
+                let hash = self.with_rpc(move |rpc| rpc.get_block_hash(height)).await?;
+                self.with_rpc(move |rpc| rpc.get_block_header(&hash)).await
+            }
+        }
+    }
 
     async fn tips(&self) -> Result<Vec<ChainTip>, FetchError> {
         self.with_rpc(|rpc| {
@@ -181,10 +178,67 @@ impl Node for BitcoinCoreNode {
         .await
     }
 
-    async fn coinbase(&self, hash: &BlockHash, _height: u64) -> Result<Transaction, FetchError> {
+    async fn get_miner_pool(
+        &self,
+        hash: &BlockHash,
+        _height: u64,
+        network: bitcoin::Network,
+    ) -> Result<Option<String>, FetchError> {
         let hash = *hash;
-        self.with_rpc(move |rpc| rpc.get_block(&hash)).await?.txdata.into_iter().next().ok_or_else(
-            || FetchError::DataError(format!("Block {} has no transactions", hash)),
+        let coinbase = self
+            .with_rpc(move |rpc| rpc.get_block(&hash))
+            .await?
+            .txdata
+            .into_iter()
+            .next()
+            .ok_or_else(|| FetchError::DataError(format!("Block {} has no transactions", hash)))?;
+
+        let miner_identification_data = default_data(network);
+        Ok(coinbase
+            .identify_pool(network, &miner_identification_data)
+            .map(|result| result.pool.name))
+    }
+
+    async fn get_new_headers(
+        &self,
+        tips: &[ChainTip],
+        tree: &Tree,
+        first_tracked_height: u64,
+        progress_tx: Option<&tokio::sync::mpsc::UnboundedSender<Vec<HeaderInfo>>>,
+    ) -> Result<(Vec<HeaderInfo>, Vec<BlockHash>), FetchError> {
+        let mut active_new_headers = if self.use_rest {
+            shared_fetch::get_new_active_headers_as_batch(
+                self,
+                tips,
+                tree,
+                first_tracked_height,
+                progress_tx,
+            )
+            .await?
+        } else {
+            shared_fetch::get_new_active_headers_by_height(
+                self,
+                tips,
+                tree,
+                first_tracked_height,
+                progress_tx,
+            )
+            .await?
+        };
+
+        let mut nonactive_new_headers = shared_fetch::get_new_nonactive_headers_by_hash(
+            self,
+            tips,
+            tree,
+            first_tracked_height,
+            progress_tx,
         )
+        .await?;
+
+        let headers_needing_miners =
+            shared_fetch::miner_hashes_for_new_headers(&active_new_headers, &nonactive_new_headers);
+
+        active_new_headers.append(&mut nonactive_new_headers);
+        Ok((active_new_headers, headers_needing_miners))
     }
 }

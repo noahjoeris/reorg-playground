@@ -1,7 +1,9 @@
 use crate::error::{EsploraRESTError, FetchError};
-use crate::node::{Capabilities, HeaderLocator, Node, NodeInfo};
-use crate::types::{ChainTip, ChainTipStatus};
+use crate::node::shared_fetch;
+use crate::node::{HeaderLocator, Node, NodeInfo};
+use crate::types::{ChainTip, ChainTipStatus, HeaderInfo, Tree};
 use async_trait::async_trait;
+use bitcoin_pool_identification::{PoolIdentification, default_data};
 use bitcoincore_rpc::bitcoin;
 use bitcoincore_rpc::bitcoin::blockdata::block::Header;
 use bitcoincore_rpc::bitcoin::hex::FromHex;
@@ -47,15 +49,28 @@ impl Esplora {
 
         Ok(response.as_str()?.to_string())
     }
+
+    async fn block_hash_at_height(&self, height: u64) -> Result<BlockHash, FetchError> {
+        let url = format!("{}/block-height/{}", self.api_url, height);
+        let hash_str = self.get_text(url).await?;
+        BlockHash::from_str(hash_str.trim())
+            .map_err(|e| FetchError::DataError(format!("Invalid block hash '{}': {}", hash_str, e)))
+    }
 }
 
 fn decode_header_hex(header_hex: &str) -> Result<Header, FetchError> {
     let header_bytes = Vec::from_hex(header_hex).map_err(|e| {
-        FetchError::DataError(format!("Can't hex decode block header '{}': {}", header_hex, e))
+        FetchError::DataError(format!(
+            "Can't hex decode block header '{}': {}",
+            header_hex, e
+        ))
     })?;
 
     bitcoin::consensus::deserialize(&header_bytes).map_err(|e| {
-        FetchError::DataError(format!("Can't deserialize block header '{}': {}", header_hex, e))
+        FetchError::DataError(format!(
+            "Can't deserialize block header '{}': {}",
+            header_hex, e
+        ))
     })
 }
 
@@ -88,15 +103,6 @@ impl Node for Esplora {
         &self.api_url
     }
 
-    fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            supports_hash_header_lookup: true,
-            supports_height_header_lookup: false,
-            supports_batch_active_headers: false,
-            supports_nonactive_headers: true,
-        }
-    }
-
     async fn version(&self) -> Result<String, FetchError> {
         Err(self.not_supported("version"))
     }
@@ -104,7 +110,7 @@ impl Node for Esplora {
     async fn block_header(&self, locator: HeaderLocator) -> Result<Header, FetchError> {
         let hash = match locator {
             HeaderLocator::Hash(hash) => hash,
-            HeaderLocator::Height(_) => return Err(self.not_supported("block_header(height)")),
+            HeaderLocator::Height(height) => self.block_hash_at_height(height).await?,
         };
 
         let url = format!("{}/block/{}/header", self.api_url, hash);
@@ -112,30 +118,23 @@ impl Node for Esplora {
         decode_header_hex(&header_hex)
     }
 
-    async fn coinbase(&self, hash: &BlockHash, _height: u64) -> Result<Transaction, FetchError> {
+    async fn get_miner_pool(
+        &self,
+        hash: &BlockHash,
+        _height: u64,
+        network: bitcoin::Network,
+    ) -> Result<Option<String>, FetchError> {
         let txid_url = format!("{}/block/{}/txid/0", self.api_url, hash);
         let txid = self.get_text(txid_url).await?;
 
         let tx_hex_url = format!("{}/tx/{}/hex", self.api_url, txid.trim());
         let tx_hex = self.get_text(tx_hex_url).await?;
 
-        decode_coinbase_from_responses(&txid, &tx_hex)
-    }
-
-    async fn block_hash(&self, height: u64) -> Result<BlockHash, FetchError> {
-        let url = format!("{}/block-height/{}", self.api_url, height);
-        let hash_str = self.get_text(url).await?;
-        BlockHash::from_str(hash_str.trim()).map_err(|e| {
-            FetchError::DataError(format!("Invalid block hash '{}': {}", hash_str, e))
-        })
-    }
-
-    async fn batch_active_headers(
-        &self,
-        _start_height: u64,
-        _count: u64,
-    ) -> Result<Vec<Header>, FetchError> {
-        Err(self.not_supported("batch_active_headers"))
+        let coinbase = decode_coinbase_from_responses(&txid, &tx_hex)?;
+        let miner_identification_data = default_data(network);
+        Ok(coinbase
+            .identify_pool(network, &miner_identification_data)
+            .map(|result| result.pool.name))
     }
 
     async fn tips(&self) -> Result<Vec<ChainTip>, FetchError> {
@@ -146,13 +145,43 @@ impl Node for Esplora {
             FetchError::DataError(format!("Invalid block height '{}': {}", height_str, e))
         })?;
 
-        let hash = self.block_hash(height).await?;
+        let hash = self.block_hash_at_height(height).await?;
         Ok(vec![ChainTip {
             height,
             hash: hash.to_string(),
             branchlen: 0,
             status: ChainTipStatus::Active,
         }])
+    }
+
+    async fn get_new_headers(
+        &self,
+        tips: &[ChainTip],
+        tree: &Tree,
+        first_tracked_height: u64,
+        progress_tx: Option<&tokio::sync::mpsc::UnboundedSender<Vec<HeaderInfo>>>,
+    ) -> Result<(Vec<HeaderInfo>, Vec<BlockHash>), FetchError> {
+        let mut active_new_headers = shared_fetch::get_new_active_headers_by_height(
+            self,
+            tips,
+            tree,
+            first_tracked_height,
+            progress_tx,
+        )
+        .await?;
+        let mut nonactive_new_headers = shared_fetch::get_new_nonactive_headers_by_hash(
+            self,
+            tips,
+            tree,
+            first_tracked_height,
+            progress_tx,
+        )
+        .await?;
+
+        let headers_needing_miners =
+            shared_fetch::miner_hashes_for_new_headers(&active_new_headers, &nonactive_new_headers);
+        active_new_headers.append(&mut nonactive_new_headers);
+        Ok((active_new_headers, headers_needing_miners))
     }
 }
 

@@ -58,7 +58,7 @@ pub struct NetworkJson {
     pub id: u32,
     pub name: String,
     pub description: String,
-    pub network_type: Option<NetworkType>,
+    pub network_type: NetworkType,
 }
 
 impl NetworkJson {
@@ -303,7 +303,7 @@ pub struct MineableNodeInfo {
 
 #[derive(Clone, Debug)]
 pub struct NetworkMineInfo {
-    pub network_type: Option<NetworkType>,
+    pub network_type: NetworkType,
     pub nodes: HashMap<u32, MineableNodeInfo>,
 }
 

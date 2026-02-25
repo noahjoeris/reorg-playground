@@ -14,7 +14,10 @@ pub enum FetchError {
     EsploraREST(EsploraRESTError),
     MinReq(minreq::Error),
     DataError(String),
-    NotSupported { node: String, operation: &'static str },
+    NotSupported {
+        node: String,
+        operation: &'static str,
+    },
     ElectrumClient(electrum_client::Error),
 }
 
@@ -29,7 +32,11 @@ impl fmt::Display for FetchError {
             FetchError::MinReq(e) => write!(f, "MinReq HTTP GET request error: {:?}", e),
             FetchError::DataError(e) => write!(f, "Invalid data response error {}", e),
             FetchError::NotSupported { node, operation } => {
-                write!(f, "Operation '{}' is not supported by node '{}'", operation, node)
+                write!(
+                    f,
+                    "Operation '{}' is not supported by node '{}'",
+                    operation, node
+                )
             }
             FetchError::ElectrumClient(e) => write!(f, "Electrum client error {}", e),
         }

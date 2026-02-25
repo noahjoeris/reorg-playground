@@ -1,9 +1,12 @@
 use crate::error::FetchError;
-use crate::node::{Capabilities, HeaderLocator, Node, NodeInfo};
-use crate::types::{ChainTip, ChainTipStatus};
+use crate::node::shared_fetch;
+use crate::node::{ActiveHeadersBatchProvider, HeaderLocator, Node, NodeInfo};
+use crate::types::{ChainTip, ChainTipStatus, HeaderInfo, Tree};
 use async_trait::async_trait;
+use bitcoin_pool_identification::{PoolIdentification, default_data};
+use bitcoincore_rpc::bitcoin;
+use bitcoincore_rpc::bitcoin::BlockHash;
 use bitcoincore_rpc::bitcoin::blockdata::block::Header;
-use bitcoincore_rpc::bitcoin::{BlockHash, Transaction};
 use electrum_client::{
     Client as ElectrumClient, ConfigBuilder as ElectrumClientConfigBuilder, ElectrumApi,
 };
@@ -70,6 +73,28 @@ impl Electrum {
 }
 
 #[async_trait]
+impl ActiveHeadersBatchProvider for Electrum {
+    async fn batch_active_headers(
+        &self,
+        start_height: u64,
+        count: u64,
+    ) -> Result<Vec<Header>, FetchError> {
+        let client_cell = self.client.clone();
+        let url = self.url.clone();
+        let node_name = self.info.name.clone();
+
+        task::spawn_blocking(move || {
+            let client = Self::init_client(client_cell.as_ref(), &url, &node_name);
+            client
+                .block_headers(start_height as usize, count as usize)
+                .map(|response| response.headers)
+                .map_err(FetchError::from)
+        })
+        .await?
+    }
+}
+
+#[async_trait]
 impl Node for Electrum {
     fn info(&self) -> &NodeInfo {
         &self.info
@@ -77,15 +102,6 @@ impl Node for Electrum {
 
     fn endpoint(&self) -> &str {
         &self.url
-    }
-
-    fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            supports_hash_header_lookup: false,
-            supports_height_header_lookup: true,
-            supports_batch_active_headers: true,
-            supports_nonactive_headers: false,
-        }
     }
 
     async fn version(&self) -> Result<String, FetchError> {
@@ -117,21 +133,6 @@ impl Node for Electrum {
             let client = Self::init_client(client_cell.as_ref(), &url, &node_name);
             client
                 .block_header(height as usize)
-                .map_err(FetchError::from)
-        })
-        .await?
-    }
-
-    async fn block_hash(&self, height: u64) -> Result<BlockHash, FetchError> {
-        let client_cell = self.client.clone();
-        let url = self.url.clone();
-        let node_name = self.info.name.clone();
-
-        task::spawn_blocking(move || {
-            let client = Self::init_client(client_cell.as_ref(), &url, &node_name);
-            client
-                .block_header(height as usize)
-                .map(|header| header.block_hash())
                 .map_err(FetchError::from)
         })
         .await?
@@ -184,13 +185,18 @@ impl Node for Electrum {
         .await?
     }
 
-    async fn coinbase(&self, hash: &BlockHash, height: u64) -> Result<Transaction, FetchError> {
+    async fn get_miner_pool(
+        &self,
+        hash: &BlockHash,
+        height: u64,
+        network: bitcoin::Network,
+    ) -> Result<Option<String>, FetchError> {
         let expected_hash = *hash;
         let client_cell = self.client.clone();
         let url = self.url.clone();
         let node_name = self.info.name.clone();
 
-        task::spawn_blocking(move || {
+        let coinbase = task::spawn_blocking(move || {
             let client = Self::init_client(client_cell.as_ref(), &url, &node_name);
 
             let header = client
@@ -209,25 +215,31 @@ impl Node for Electrum {
                 .map_err(FetchError::from)?;
             client.transaction_get(&txid).map_err(FetchError::from)
         })
-        .await?
+        .await??;
+
+        let miner_identification_data = default_data(network);
+        Ok(coinbase
+            .identify_pool(network, &miner_identification_data)
+            .map(|result| result.pool.name))
     }
 
-    async fn batch_active_headers(
+    async fn get_new_headers(
         &self,
-        start_height: u64,
-        count: u64,
-    ) -> Result<Vec<Header>, FetchError> {
-        let client_cell = self.client.clone();
-        let url = self.url.clone();
-        let node_name = self.info.name.clone();
-
-        task::spawn_blocking(move || {
-            let client = Self::init_client(client_cell.as_ref(), &url, &node_name);
-            client
-                .block_headers(start_height as usize, count as usize)
-                .map(|response| response.headers)
-                .map_err(FetchError::from)
-        })
-        .await?
+        tips: &[ChainTip],
+        tree: &Tree,
+        first_tracked_height: u64,
+        progress_tx: Option<&tokio::sync::mpsc::UnboundedSender<Vec<HeaderInfo>>>,
+    ) -> Result<(Vec<HeaderInfo>, Vec<BlockHash>), FetchError> {
+        let active_new_headers = shared_fetch::get_new_active_headers_as_batch(
+            self,
+            tips,
+            tree,
+            first_tracked_height,
+            progress_tx,
+        )
+        .await?;
+        let headers_needing_miners =
+            shared_fetch::miner_hashes_for_new_headers(&active_new_headers, &[]);
+        Ok((active_new_headers, headers_needing_miners))
     }
 }

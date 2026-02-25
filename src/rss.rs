@@ -3,7 +3,7 @@ use std::fmt;
 
 use axum::{
     extract::{Path, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::IntoResponse,
 };
 
@@ -175,8 +175,7 @@ impl Item {
             title: format!("Node '{}' is lagging behind", node.name),
             description: format!(
                 "The node's active tip is on height {}, while other nodes consider a block with a height at least {} blocks higher their active tip. The node might still be synchronizing with the network or stuck.",
-                height,
-                THREASHOLD_NODE_LAGGING,
+                height, THREASHOLD_NODE_LAGGING,
             ),
             guid: format!("lagging-node-{}-on-{}", node.name, height),
         }
@@ -189,7 +188,10 @@ impl Item {
                 "The RPC server of this node is not reachable. The node might be offline or there might be other networking issues. The nodes tip data was last updated at timestamp {} (zero indicates never).",
                 node.last_changed_timestamp,
             ),
-            guid: format!("unreachable-node-{}-last-{}", node.id, node.last_changed_timestamp),
+            guid: format!(
+                "unreachable-node-{}-last-{}",
+                node.id, node.last_changed_timestamp
+            ),
         }
     }
 }
@@ -286,14 +288,8 @@ pub async fn invalid_blocks_response(
             let feed = Feed {
                 channel: Channel {
                     title: format!("Invalid Blocks - {}", name),
-                    description: format!(
-                        "Recent invalid blocks on the Bitcoin {} network",
-                        name
-                    ),
-                    link: format!(
-                        "{}?network={}?src=invalid-rss",
-                        base_url, network_id
-                    ),
+                    description: format!("Recent invalid blocks on the Bitcoin {} network", name),
+                    link: format!("{}?network={}?src=invalid-rss", base_url, network_id),
                     href: format!("{}/rss/{}/invalid.xml", base_url, network_id),
                     items: invalid_blocks
                         .iter()
@@ -328,14 +324,8 @@ pub async fn unreachable_nodes_response(
             let feed = Feed {
                 channel: Channel {
                     title: format!("Unreachable nodes - {}", name),
-                    description: format!(
-                        "Nodes on the {} network that can't be reached",
-                        name
-                    ),
-                    link: format!(
-                        "{}?network={}?src=unreachable-nodes",
-                        base_url, network_id
-                    ),
+                    description: format!("Nodes on the {} network that can't be reached", name),
+                    link: format!("{}?network={}?src=unreachable-nodes", base_url, network_id),
                     href: format!("{}/rss/{}/unreachable.xml", base_url, network_id),
                     items: unreachable_node_items,
                 },

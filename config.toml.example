@@ -56,3 +56,4 @@ network_type = "Testnet"
     rpc_user = ""
     rpc_password = ""
     use_rest = false
+    client_implementation = "bitcoincore"

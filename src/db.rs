@@ -49,11 +49,7 @@ pub async fn setup_db(db: Db) -> Result<(), DbError> {
     Ok(())
 }
 
-pub async fn write_to_db(
-    new_headers: &[HeaderInfo],
-    db: Db,
-    network: u32,
-) -> Result<(), DbError> {
+pub async fn write_to_db(new_headers: &[HeaderInfo], db: Db, network: u32) -> Result<(), DbError> {
     let mut db_locked = db.lock().await;
     let tx = db_locked.transaction()?;
     debug!(
@@ -226,7 +222,12 @@ mod tests {
         let tree = load_treeinfos(db, network_id, 105)
             .await
             .expect("load treeinfos");
-        let heights: Vec<u64> = tree.graph.raw_nodes().iter().map(|n| n.weight.height).collect();
+        let heights: Vec<u64> = tree
+            .graph
+            .raw_nodes()
+            .iter()
+            .map(|n| n.weight.height)
+            .collect();
 
         assert_eq!(tree.graph.node_count(), 6);
         assert!(heights.iter().all(|h| *h >= 105));

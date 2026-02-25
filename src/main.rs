@@ -1,6 +1,5 @@
-use bitcoin_pool_identification::{PoolIdentification, default_data};
 use bitcoincore_rpc::Error::JsonRpc;
-use bitcoincore_rpc::bitcoin::{BlockHash, Network};
+use bitcoincore_rpc::bitcoin::BlockHash;
 use env_logger::Env;
 use log::{error, info, warn};
 use petgraph::graph::NodeIndex;
@@ -215,14 +214,14 @@ fn spawn_network_tasks(
                         tips
                     }
                     Err(e) => {
-                            error!(
-                                "Could not fetch chaintips from {} (endpoint={}) on network '{}' (id={}): {:?}",
-                                node.info(),
-                                node.endpoint(),
-                                network.name,
-                                network.id,
-                                e
-                            );
+                        error!(
+                            "Could not fetch chaintips from {} (endpoint={}) on network '{}' (id={}): {:?}",
+                            node.info(),
+                            node.endpoint(),
+                            network.name,
+                            network.id,
+                            e
+                        );
                         if is_node_reachable(&caches_clone, network.id, node.info().id).await {
                             update_cache(
                                 &caches_clone,
@@ -320,7 +319,7 @@ fn spawn_network_tasks(
                     });
 
                     let (_, miners_needed): (Vec<HeaderInfo>, Vec<BlockHash>) = match node
-                        .new_headers(
+                        .get_new_headers(
                             &tips,
                             &tree_clone,
                             network.first_tracked_height,
@@ -437,11 +436,7 @@ fn spawn_network_tasks(
     let network_for_miner = network.clone();
     let cache_changed_tx_clone = cache_changed_tx.clone();
     task::spawn(async move {
-        let miner_network_type = match network_for_miner.network_type.as_ref() {
-            Some(network_type) => network_type.as_bitcoin_network(),
-            None => Network::Regtest,
-        };
-        let miner_identification_data = default_data(miner_network_type);
+        let miner_network_type = network_for_miner.network_type.as_bitcoin_network();
 
         let limit = 100;
         let mut buffer: Vec<BlockHash> = Vec::with_capacity(limit);
@@ -475,20 +470,20 @@ fn spawn_network_tasks(
                 let mut miner = MINER_UNKNOWN.to_string();
                 for node in network_clone.nodes.iter().cloned() {
                     match node
-                        .coinbase(&header_info.header.block_hash(), header_info.height)
+                        .get_miner_pool(
+                            &header_info.header.block_hash(),
+                            header_info.height,
+                            miner_network_type,
+                        )
                         .await
                     {
-                        Ok(coinbase) => {
-                            miner = match coinbase
-                                .identify_pool(miner_network_type, &miner_identification_data)
-                            {
-                                Some(result) => result.pool.name,
-                                None => MINER_UNKNOWN.to_string(),
-                            };
+                        Ok(Some(pool_name)) => {
+                            miner = pool_name;
                         }
+                        Ok(None) => {}
                         Err(e) => {
                             warn!(
-                                "Could not get coinbase for block {} from node {}: {}",
+                                "Could not identify miner pool for block {} from node {}: {}",
                                 header_info.header.block_hash(),
                                 node.info().name,
                                 e

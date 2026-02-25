@@ -1,7 +1,7 @@
 //! Shared header-fetch orchestration used by all node backend implementations.
 
 use crate::error::FetchError;
-use crate::node::{HeaderLocator, Node};
+use crate::node::{ActiveHeadersBatchProvider, HeaderLocator, Node};
 use crate::types::{ChainTip, ChainTipStatus, HeaderInfo, Tree};
 use bitcoincore_rpc::bitcoin::BlockHash;
 use bitcoincore_rpc::bitcoin::blockdata::block::Header;
@@ -16,44 +16,29 @@ const ACTIVE_MINER_LOOKUP_LIMIT: usize = 20;
 /// How many headers to accumulate before sending one progress batch. Used to update the state already before function returns.
 const RPC_PROGRESS_BATCH_SIZE: usize = 10;
 
-/// Fetches active and non-active headers and returns hashes that require miner identification.
-pub(crate) async fn new_headers<N: Node + ?Sized>(
-    node: &N,
-    tips: &[ChainTip],
-    tree: &Tree,
-    first_tracked_height: u64,
-    progress_tx: Option<&UnboundedSender<Vec<HeaderInfo>>>,
-) -> Result<(Vec<HeaderInfo>, Vec<BlockHash>), FetchError> {
-    let mut new_headers: Vec<HeaderInfo> = Vec::new();
-    let mut headers_needing_miners: Vec<BlockHash> = Vec::new();
+/// Derives miner-identification candidates from active and non-active additions.
+pub(crate) fn miner_hashes_for_new_headers(
+    active_new_headers: &[HeaderInfo],
+    nonactive_new_headers: &[HeaderInfo],
+) -> Vec<BlockHash> {
+    let mut hashes: Vec<BlockHash> = Vec::new();
 
-    let mut active_new_headers =
-        new_active_headers(node, tips, tree, first_tracked_height, progress_tx).await?;
     if active_new_headers.len() <= ACTIVE_MINER_LOOKUP_LIMIT {
-        headers_needing_miners.extend(active_new_headers.iter().map(|h| h.header.block_hash()));
+        hashes.extend(active_new_headers.iter().map(|h| h.header.block_hash()));
     }
-    new_headers.append(&mut active_new_headers);
-
-    let mut nonactive_new_headers =
-        new_nonactive_headers(node, tips, tree, first_tracked_height, progress_tx).await?;
-    headers_needing_miners.extend(nonactive_new_headers.iter().map(|h| h.header.block_hash()));
-    new_headers.append(&mut nonactive_new_headers);
-
-    Ok((new_headers, headers_needing_miners))
+    hashes.extend(nonactive_new_headers.iter().map(|h| h.header.block_hash()));
+    hashes
 }
 
-/// Fetches active-chain headers backward from tip until a known local header is reached.
-pub(crate) async fn new_active_headers<N: Node + ?Sized>(
-    node: &N,
+/// Fetches active-chain headers backward from tip using batched transport.
+pub(crate) async fn get_new_active_headers_as_batch(
+    batch_provider: &dyn ActiveHeadersBatchProvider,
     tips: &[ChainTip],
     tree: &Tree,
     first_tracked_height: u64,
     progress_tx: Option<&UnboundedSender<Vec<HeaderInfo>>>,
 ) -> Result<Vec<HeaderInfo>, FetchError> {
     let mut new_headers: Vec<HeaderInfo> = Vec::new();
-    let mut rpc_buffer: Vec<HeaderInfo> = Vec::new();
-
-    let caps = node.capabilities();
     let active_tip = find_active_tip(tips)?;
 
     let mut query_height: i64 = active_tip.height as i64;
@@ -62,66 +47,74 @@ pub(crate) async fn new_active_headers<N: Node + ?Sized>(
             break;
         }
 
-        if caps.supports_batch_active_headers {
-            let start_height = max(
-                first_tracked_height as i64,
-                query_height - ACTIVE_BATCH_STEP + 1,
-            );
-            let headers = node
-                .batch_active_headers(start_height as u64, ACTIVE_BATCH_STEP as u64)
-                .await?;
+        let start_height = max(
+            first_tracked_height as i64,
+            query_height - ACTIVE_BATCH_STEP + 1,
+        );
+        let headers = batch_provider
+            .batch_active_headers(start_height as u64, ACTIVE_BATCH_STEP as u64)
+            .await?;
 
-            if headers.is_empty() {
-                break;
-            }
+        if headers.is_empty() {
+            break;
+        }
 
-            let mut already_knew_a_header = false;
-            let mut batch_new: Vec<HeaderInfo> = Vec::new();
+        let mut already_knew_a_header = false;
+        let mut batch_new: Vec<HeaderInfo> = Vec::new();
 
-            {
-                let tree_locked = tree.lock().await;
-                for (header, height) in headers.iter().zip(start_height as u64..) {
-                    if tree_locked.index.contains_key(&header.block_hash()) {
-                        already_knew_a_header = true;
-                        continue;
-                    }
-
-                    let header_info = make_header_info(height, *header);
-                    batch_new.push(header_info.clone());
-                    new_headers.push(header_info);
+        {
+            let tree_locked = tree.lock().await;
+            for (header, height) in headers.iter().zip(start_height as u64..) {
+                if tree_locked.index.contains_key(&header.block_hash()) {
+                    already_knew_a_header = true;
+                    continue;
                 }
+
+                let header_info = make_header_info(height, *header);
+                batch_new.push(header_info.clone());
+                new_headers.push(header_info);
             }
+        }
 
-            send_progress_batch(progress_tx, batch_new);
+        send_progress_batch(progress_tx, batch_new);
 
-            if already_knew_a_header {
-                break;
-            }
+        if already_knew_a_header {
+            break;
+        }
 
-            query_height -= ACTIVE_BATCH_STEP;
-            continue;
+        query_height -= ACTIVE_BATCH_STEP;
+    }
+
+    new_headers.sort_by_key(|h| h.height);
+    Ok(new_headers)
+}
+
+/// Fetches active-chain headers backward from tip using one height lookup at a time.
+pub(crate) async fn get_new_active_headers_by_height<N: Node + ?Sized>(
+    node: &N,
+    tips: &[ChainTip],
+    tree: &Tree,
+    first_tracked_height: u64,
+    progress_tx: Option<&UnboundedSender<Vec<HeaderInfo>>>,
+) -> Result<Vec<HeaderInfo>, FetchError> {
+    let mut new_headers: Vec<HeaderInfo> = Vec::new();
+    let mut rpc_buffer: Vec<HeaderInfo> = Vec::new();
+    let active_tip = find_active_tip(tips)?;
+
+    let mut query_height: i64 = active_tip.height as i64;
+    loop {
+        if query_height < first_tracked_height as i64 {
+            break;
         }
 
         let height = query_height as u64;
-        let header_hash = node.block_hash(height).await?;
+        let header = node.block_header(HeaderLocator::Height(height)).await?;
+        let header_hash = header.block_hash();
         if tree_contains_hash(tree, &header_hash).await {
             break;
         }
 
-        let locator = if caps.supports_hash_header_lookup {
-            HeaderLocator::Hash(header_hash)
-        } else if caps.supports_height_header_lookup {
-            HeaderLocator::Height(height)
-        } else {
-            return Err(FetchError::NotSupported {
-                node: node.info().implementation.clone(),
-                operation: "active header lookup",
-            });
-        };
-
-        let header = node.block_header(locator).await?;
         let header_info = make_header_info(height, header);
-
         rpc_buffer.push(header_info.clone());
         new_headers.push(header_info);
 
@@ -135,32 +128,19 @@ pub(crate) async fn new_active_headers<N: Node + ?Sized>(
     }
 
     send_progress_batch(progress_tx, rpc_buffer);
-
     new_headers.sort_by_key(|h| h.height);
     Ok(new_headers)
 }
 
-/// Fetches non-active branch headers for eligible tips until a known ancestor is reached.
-pub(crate) async fn new_nonactive_headers<N: Node + ?Sized>(
+/// Fetches non-active branch headers for eligible tips using hash-based lookup.
+pub(crate) async fn get_new_nonactive_headers_by_hash<N: Node + ?Sized>(
     node: &N,
     tips: &[ChainTip],
     tree: &Tree,
     first_tracked_height: u64,
     progress_tx: Option<&UnboundedSender<Vec<HeaderInfo>>>,
 ) -> Result<Vec<HeaderInfo>, FetchError> {
-    let caps = node.capabilities();
     let mut new_headers: Vec<HeaderInfo> = Vec::new();
-
-    if !caps.supports_nonactive_headers {
-        return Ok(new_headers);
-    }
-
-    if !caps.supports_hash_header_lookup {
-        return Err(FetchError::NotSupported {
-            node: node.info().implementation.clone(),
-            operation: "non-active header lookup",
-        });
-    }
 
     for inactive_tip in tips
         .iter()
@@ -234,7 +214,7 @@ async fn tree_contains_hash(tree: &Tree, hash: &BlockHash) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::node::{Capabilities, HeaderLocator, Node, NodeInfo};
+    use crate::node::{HeaderLocator, Node, NodeInfo};
     use crate::types::TreeInfo;
     use async_trait::async_trait;
     use bitcoincore_rpc::bitcoin::blockdata::block::Header;
@@ -322,19 +302,37 @@ mod tests {
         batches
     }
 
+    #[derive(Clone, Copy, Eq, PartialEq)]
+    enum HeaderLookupMode {
+        HeightAndHash,
+        HeightOnly,
+    }
+
+    #[derive(Clone, Copy, Eq, PartialEq)]
+    enum ActiveFetchMode {
+        Batch,
+        Height,
+    }
+
     /// Minimal in-memory `Node` used to exercise shared fetch behavior deterministically.
     #[derive(Clone)]
     struct MockNode {
         info: NodeInfo,
         endpoint: String,
-        caps: Capabilities,
+        active_fetch_mode: ActiveFetchMode,
+        header_lookup_mode: HeaderLookupMode,
         tips: Vec<ChainTip>,
         headers_by_height: HashMap<u64, Header>,
         headers_by_hash: HashMap<BlockHash, Header>,
     }
 
     impl MockNode {
-        fn new(caps: Capabilities, tips: Vec<ChainTip>, headers: Vec<(u64, Header)>) -> Self {
+        fn new(
+            active_fetch_mode: ActiveFetchMode,
+            header_lookup_mode: HeaderLookupMode,
+            tips: Vec<ChainTip>,
+            headers: Vec<(u64, Header)>,
+        ) -> Self {
             let mut headers_by_height = HashMap::new();
             let mut headers_by_hash = HashMap::new();
 
@@ -351,11 +349,37 @@ mod tests {
                     implementation: "mock".to_string(),
                 },
                 endpoint: "mock://node".to_string(),
-                caps,
+                active_fetch_mode,
+                header_lookup_mode,
                 tips,
                 headers_by_height,
                 headers_by_hash,
             }
+        }
+    }
+
+    #[async_trait]
+    impl ActiveHeadersBatchProvider for MockNode {
+        async fn batch_active_headers(
+            &self,
+            start_height: u64,
+            count: u64,
+        ) -> Result<Vec<Header>, FetchError> {
+            if self.active_fetch_mode != ActiveFetchMode::Batch {
+                return Err(FetchError::NotSupported {
+                    node: self.info.implementation.clone(),
+                    operation: "batch_active_headers",
+                });
+            }
+
+            let mut headers = Vec::new();
+            for height in start_height..start_height.saturating_add(count) {
+                match self.headers_by_height.get(&height).copied() {
+                    Some(header) => headers.push(header),
+                    None => break,
+                }
+            }
+            Ok(headers)
         }
     }
 
@@ -369,21 +393,8 @@ mod tests {
             &self.endpoint
         }
 
-        fn capabilities(&self) -> Capabilities {
-            self.caps
-        }
-
         async fn version(&self) -> Result<String, FetchError> {
             Ok("mock".to_string())
-        }
-
-        async fn block_hash(&self, height: u64) -> Result<BlockHash, FetchError> {
-            self.headers_by_height
-                .get(&height)
-                .map(|h| h.block_hash())
-                .ok_or_else(|| {
-                    FetchError::DataError(format!("missing header at height {}", height))
-                })
         }
 
         async fn block_header(&self, locator: HeaderLocator) -> Result<Header, FetchError> {
@@ -394,6 +405,12 @@ mod tests {
                     })
                 }
                 HeaderLocator::Hash(hash) => {
+                    if self.header_lookup_mode == HeaderLookupMode::HeightOnly {
+                        return Err(FetchError::NotSupported {
+                            node: self.info.implementation.clone(),
+                            operation: "block_header(hash)",
+                        });
+                    }
                     self.headers_by_hash.get(&hash).copied().ok_or_else(|| {
                         FetchError::DataError(format!("missing header with hash {}", hash))
                     })
@@ -401,34 +418,73 @@ mod tests {
             }
         }
 
-        async fn batch_active_headers(
-            &self,
-            start_height: u64,
-            count: u64,
-        ) -> Result<Vec<Header>, FetchError> {
-            let mut headers = Vec::new();
-            for height in start_height..start_height.saturating_add(count) {
-                match self.headers_by_height.get(&height).copied() {
-                    Some(header) => headers.push(header),
-                    None => break,
-                }
-            }
-            Ok(headers)
-        }
-
         async fn tips(&self) -> Result<Vec<ChainTip>, FetchError> {
             Ok(self.tips.clone())
         }
 
-        async fn coinbase(
+        async fn get_miner_pool(
             &self,
             _hash: &BlockHash,
             _height: u64,
-        ) -> Result<bitcoincore_rpc::bitcoin::Transaction, FetchError> {
+            _network: bitcoincore_rpc::bitcoin::Network,
+        ) -> Result<Option<String>, FetchError> {
             Err(FetchError::NotSupported {
                 node: self.info.implementation.clone(),
-                operation: "coinbase",
+                operation: "get_miner_pool",
             })
+        }
+
+        async fn get_new_headers(
+            &self,
+            tips: &[ChainTip],
+            tree: &Tree,
+            first_tracked_height: u64,
+            progress_tx: Option<&UnboundedSender<Vec<HeaderInfo>>>,
+        ) -> Result<(Vec<HeaderInfo>, Vec<BlockHash>), FetchError> {
+            let mut active = match self.active_fetch_mode {
+                ActiveFetchMode::Batch => {
+                    get_new_active_headers_as_batch(
+                        self,
+                        tips,
+                        tree,
+                        first_tracked_height,
+                        progress_tx,
+                    )
+                    .await?
+                }
+                ActiveFetchMode::Height => {
+                    get_new_active_headers_by_height(
+                        self,
+                        tips,
+                        tree,
+                        first_tracked_height,
+                        progress_tx,
+                    )
+                    .await?
+                }
+            };
+
+            let mut nonactive = match get_new_nonactive_headers_by_hash(
+                self,
+                tips,
+                tree,
+                first_tracked_height,
+                progress_tx,
+            )
+            .await
+            {
+                Ok(headers) => headers,
+                Err(FetchError::NotSupported { operation, .. })
+                    if operation == "block_header(hash)" =>
+                {
+                    Vec::new()
+                }
+                Err(e) => return Err(e),
+            };
+
+            let miner_hashes = miner_hashes_for_new_headers(&active, &nonactive);
+            active.append(&mut nonactive);
+            Ok((active, miner_hashes))
         }
     }
 
@@ -441,18 +497,14 @@ mod tests {
 
         let active_tip_hash = all_headers[25].1.block_hash();
         let node = MockNode::new(
-            Capabilities {
-                supports_hash_header_lookup: true,
-                supports_height_header_lookup: false,
-                supports_batch_active_headers: true,
-                supports_nonactive_headers: true,
-            },
+            ActiveFetchMode::Batch,
+            HeaderLookupMode::HeightAndHash,
             vec![make_tip(25, active_tip_hash, 0, ChainTipStatus::Active)],
             all_headers,
         );
 
         let (tx, rx) = unbounded_channel::<Vec<HeaderInfo>>();
-        let headers = new_active_headers(
+        let headers = get_new_active_headers_as_batch(
             &node,
             &node.tips().await.expect("tips"),
             &known_tree,
@@ -478,18 +530,14 @@ mod tests {
 
         let active_tip_hash = all_headers[25].1.block_hash();
         let node = MockNode::new(
-            Capabilities {
-                supports_hash_header_lookup: true,
-                supports_height_header_lookup: false,
-                supports_batch_active_headers: false,
-                supports_nonactive_headers: true,
-            },
+            ActiveFetchMode::Height,
+            HeaderLookupMode::HeightAndHash,
             vec![make_tip(25, active_tip_hash, 0, ChainTipStatus::Active)],
             all_headers,
         );
 
         let (tx, rx) = unbounded_channel::<Vec<HeaderInfo>>();
-        let headers = new_active_headers(
+        let headers = get_new_active_headers_by_height(
             &node,
             &node.tips().await.expect("tips"),
             &known_tree,
@@ -529,18 +577,14 @@ mod tests {
         ];
 
         let node = MockNode::new(
-            Capabilities {
-                supports_hash_header_lookup: true,
-                supports_height_header_lookup: false,
-                supports_batch_active_headers: false,
-                supports_nonactive_headers: true,
-            },
+            ActiveFetchMode::Height,
+            HeaderLookupMode::HeightAndHash,
             tips,
             all_headers,
         );
 
         let (headers, miner_hashes) = node
-            .new_headers(&node.tips().await.expect("tips"), &known_tree, 0, None)
+            .get_new_headers(&node.tips().await.expect("tips"), &known_tree, 0, None)
             .await
             .expect("new headers");
 
@@ -568,18 +612,14 @@ mod tests {
         ];
 
         let node = MockNode::new(
-            Capabilities {
-                supports_hash_header_lookup: true,
-                supports_height_header_lookup: false,
-                supports_batch_active_headers: false,
-                supports_nonactive_headers: true,
-            },
+            ActiveFetchMode::Height,
+            HeaderLookupMode::HeightAndHash,
             tips,
             all_headers,
         );
 
         let (_headers, miner_hashes) = node
-            .new_headers(&node.tips().await.expect("tips"), &known_tree, 0, None)
+            .get_new_headers(&node.tips().await.expect("tips"), &known_tree, 0, None)
             .await
             .expect("new headers");
 
@@ -604,12 +644,8 @@ mod tests {
         let known_tree = make_tree(&active_headers[..=8]);
 
         let node = MockNode::new(
-            Capabilities {
-                supports_hash_header_lookup: true,
-                supports_height_header_lookup: false,
-                supports_batch_active_headers: false,
-                supports_nonactive_headers: true,
-            },
+            ActiveFetchMode::Height,
+            HeaderLookupMode::HeightAndHash,
             vec![make_tip(
                 10,
                 alt_10.block_hash(),
@@ -619,7 +655,7 @@ mod tests {
             all_headers,
         );
 
-        let headers = new_nonactive_headers(
+        let headers = get_new_nonactive_headers_by_hash(
             &node,
             &node.tips().await.expect("tips"),
             &known_tree,
@@ -631,6 +667,31 @@ mod tests {
 
         assert_eq!(headers.len(), 2);
         assert_eq!(heights(&headers), vec![10, 9]);
+    }
+
+    /// Tests that non-active traversal is skipped when hash-based header lookup is unsupported.
+    #[tokio::test]
+    async fn new_nonactive_headers_skips_when_hash_lookup_not_supported() {
+        let active_headers = make_linear_headers(0, 2);
+        let known_tree = make_tree(&active_headers[..=0]);
+        let active_tip_hash = active_headers[2].1.block_hash();
+
+        let node = MockNode::new(
+            ActiveFetchMode::Height,
+            HeaderLookupMode::HeightOnly,
+            vec![
+                make_tip(2, active_tip_hash, 0, ChainTipStatus::Active),
+                make_tip(2, active_tip_hash, 1, ChainTipStatus::ValidFork),
+            ],
+            active_headers,
+        );
+
+        let (headers, _miners) = node
+            .get_new_headers(&node.tips().await.expect("tips"), &known_tree, 0, None)
+            .await
+            .expect("new headers");
+
+        assert_eq!(heights(&headers), vec![1, 2]);
     }
 
     /// Tests that non-active tip filtering uses `saturating_sub` and avoids underflow-driven fetches.
@@ -646,17 +707,13 @@ mod tests {
         };
 
         let node = MockNode::new(
-            Capabilities {
-                supports_hash_header_lookup: true,
-                supports_height_header_lookup: false,
-                supports_batch_active_headers: false,
-                supports_nonactive_headers: true,
-            },
+            ActiveFetchMode::Height,
+            HeaderLookupMode::HeightOnly,
             vec![make_tip(1, bogus_hash, 5, ChainTipStatus::ValidFork)],
             all_headers,
         );
 
-        let headers = new_nonactive_headers(
+        let headers = get_new_nonactive_headers_by_hash(
             &node,
             &node.tips().await.expect("tips"),
             &known_tree,
