@@ -200,6 +200,7 @@ fn parse_config(config_str: &str) -> Result<Config, ConfigError> {
     let mut mine_info: HashMap<u32, NetworkMineInfo> = HashMap::new();
 
     for toml_network in toml_config.networks.iter() {
+        let network_type = toml_network.network_type.as_bitcoin_network();
         let mut nodes: Vec<BoxedSyncSendNode> = vec![];
         let mut node_ids: Vec<u32> = vec![];
         let mut mine_nodes: HashMap<u32, MineableNodeInfo> = HashMap::new();
@@ -207,7 +208,7 @@ fn parse_config(config_str: &str) -> Result<Config, ConfigError> {
         for toml_node in toml_network.nodes.iter() {
             let backend = toml_node.client_implementation.parse::<Backend>()?;
 
-            match parse_toml_node(toml_node) {
+            match parse_toml_node(toml_node, network_type) {
                 Ok(node) => {
                     if !node_ids.contains(&node.info().id) {
                         node_ids.push(node.info().id);
@@ -313,7 +314,10 @@ fn parse_toml_network(
     })
 }
 
-fn parse_toml_node(toml_node: &TomlNode) -> Result<BoxedSyncSendNode, ConfigError> {
+fn parse_toml_node(
+    toml_node: &TomlNode,
+    network_type: BitcoinNetwork,
+) -> Result<BoxedSyncSendNode, ConfigError> {
     let client_implementation = toml_node.client_implementation.parse::<Backend>()?;
 
     let node_info = NodeInfo {
@@ -321,6 +325,7 @@ fn parse_toml_node(toml_node: &TomlNode) -> Result<BoxedSyncSendNode, ConfigErro
         name: toml_node.name.clone(),
         description: toml_node.description.clone(),
         implementation: client_implementation.to_string(),
+        network_type,
     };
 
     let node: BoxedSyncSendNode = match client_implementation {

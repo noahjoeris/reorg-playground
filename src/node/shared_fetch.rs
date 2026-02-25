@@ -219,7 +219,9 @@ mod tests {
     use async_trait::async_trait;
     use bitcoincore_rpc::bitcoin::blockdata::block::Header;
     use bitcoincore_rpc::bitcoin::hashes::{Hash, HashEngine};
-    use bitcoincore_rpc::bitcoin::{BlockHash, CompactTarget, TxMerkleNode};
+    use bitcoincore_rpc::bitcoin::{
+        BlockHash, CompactTarget, Network as BitcoinNetwork, TxMerkleNode,
+    };
     use petgraph::graph::DiGraph;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -347,6 +349,7 @@ mod tests {
                     name: "mock".to_string(),
                     description: "mock node".to_string(),
                     implementation: "mock".to_string(),
+                    network_type: BitcoinNetwork::Regtest,
                 },
                 endpoint: "mock://node".to_string(),
                 active_fetch_mode,

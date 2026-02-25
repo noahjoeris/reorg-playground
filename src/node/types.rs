@@ -1,4 +1,4 @@
-use bitcoincore_rpc::bitcoin::BlockHash;
+use bitcoincore_rpc::bitcoin::{BlockHash, Network as BitcoinNetwork};
 use std::fmt;
 
 /// Selects whether a header should be fetched by height or by hash.
@@ -17,14 +17,15 @@ pub struct NodeInfo {
     pub name: String,
     pub description: String,
     pub implementation: String,
+    pub network_type: BitcoinNetwork,
 }
 
 impl fmt::Display for NodeInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Node(id={}, name='{}', implementation='{}')",
-            self.id, self.name, self.implementation
+            "Node(id={}, name='{}', implementation='{}', network_type='{}')",
+            self.id, self.name, self.implementation, self.network_type
         )
     }
 }

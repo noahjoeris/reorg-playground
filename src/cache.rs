@@ -250,6 +250,7 @@ pub async fn update_cache(
 mod tests {
     use super::*;
     use crate::node::NodeInfo;
+    use bitcoincore_rpc::bitcoin::Network as BitcoinNetwork;
     use std::collections::BTreeMap;
     use std::sync::Arc;
     use tokio::sync::{Mutex, broadcast};
@@ -275,6 +276,7 @@ mod tests {
             name: "".to_string(),
             description: "".to_string(),
             implementation: "".to_string(),
+            network_type: BitcoinNetwork::Regtest,
         };
         {
             let mut locked_caches = caches.lock().await;
