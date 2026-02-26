@@ -57,4 +57,20 @@ pub trait Node: Send + Sync {
         first_tracked_height: u64,
         progress_tx: Option<&UnboundedSender<Vec<HeaderInfo>>>,
     ) -> Result<(Vec<HeaderInfo>, Vec<BlockHash>), FetchError>;
+
+    /// Mines new blocks when supported by the backend/network.
+    async fn mine_new_blocks(&self, _count: u64) -> Result<Vec<BlockHash>, FetchError> {
+        Err(FetchError::NotSupported {
+            node: self.info().implementation.clone(),
+            operation: "mine_new_blocks",
+        })
+    }
+
+    /// Toggles P2P network activity when supported by the backend.
+    async fn set_network_active(&self, _active: bool) -> Result<(), FetchError> {
+        Err(FetchError::NotSupported {
+            node: self.info().implementation.clone(),
+            operation: "set_network_active",
+        })
+    }
 }

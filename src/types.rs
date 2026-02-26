@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -286,36 +285,13 @@ impl ChainTip {
     }
 }
 
-// -- Mining types --
-
-#[derive(Clone, Debug)]
-pub enum MineAuth {
-    CookieFile(PathBuf),
-    UserPass(String, String),
-}
-
-#[derive(Clone, Debug)]
-pub struct MineableNodeInfo {
-    pub rpc_host: String,
-    pub rpc_port: u16,
-    pub rpc_auth: MineAuth,
-}
-
-#[derive(Clone, Debug)]
-pub struct NetworkMineInfo {
-    pub network_type: NetworkType,
-    pub nodes: HashMap<u32, MineableNodeInfo>,
-}
-
-pub type MineInfoMap = Arc<HashMap<u32, NetworkMineInfo>>;
-
 // -- Axum shared application state --
 
 #[derive(Clone)]
 pub struct AppState {
     pub caches: Caches,
+    pub networks: Vec<Network>,
     pub network_infos: Vec<NetworkJson>,
     pub rss_base_url: String,
     pub cache_changed_tx: tokio::sync::broadcast::Sender<u32>,
-    pub mine_info: MineInfoMap,
 }

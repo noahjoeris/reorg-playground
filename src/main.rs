@@ -31,8 +31,8 @@ use crate::cache::{
     CacheUpdate, MAX_FORKS_IN_CACHE, MINER_UNKNOWN, VERSION_UNKNOWN, is_node_reachable,
     update_cache,
 };
-use crate::config::BoxedSyncSendNode;
 use crate::error::{DbError, MainError};
+use crate::node::Node;
 use types::{AppState, Caches, ChainTip, Db, HeaderInfo, NetworkJson, Tree};
 
 async fn startup() -> Result<(config::Config, Db, Caches), MainError> {
@@ -104,10 +104,10 @@ async fn main() -> Result<(), MainError> {
 
     let state = AppState {
         caches: caches.clone(),
+        networks: config.networks.clone(),
         network_infos,
         rss_base_url: config.rss_base_url.clone(),
         cache_changed_tx: cache_changed_tx.clone(),
-        mine_info: Arc::new(config.mine_info),
     };
 
     let app = Router::new()
@@ -115,6 +115,10 @@ async fn main() -> Result<(), MainError> {
         .route("/api/networks.json", get(api::networks_response))
         .route("/api/changes", get(api::changes_sse))
         .route("/api/{network_id}/mine-block", post(api::mine_block))
+        .route(
+            "/api/{network_id}/network-active",
+            post(api::set_network_active),
+        )
         .route("/rss/{network_id}/forks.xml", get(rss::forks_response))
         .route(
             "/rss/{network_id}/invalid.xml",
@@ -534,7 +538,7 @@ fn spawn_network_tasks(
 const NODE_VERSION_RETRIES: u32 = 5;
 const NODE_VERSION_RETRY_DELAY: Duration = Duration::from_secs(10);
 
-async fn load_node_version(node: BoxedSyncSendNode, network: &str) -> String {
+async fn load_node_version(node: Arc<dyn Node>, network: &str) -> String {
     for attempt in 0..NODE_VERSION_RETRIES {
         match node.version().await {
             Ok(version) => return version,

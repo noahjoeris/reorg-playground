@@ -4,7 +4,6 @@ use bitcoincore_rpc::Auth;
 use bitcoincore_rpc::bitcoin::Network as BitcoinNetwork;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::hash::Hash;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -13,14 +12,10 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{env, fmt, fs};
 
-use crate::types::{MineAuth, MineableNodeInfo, NetworkMineInfo};
-
 pub const ENVVAR_CONFIG_FILE: &str = "CONFIG_FILE";
 const DEFAULT_CONFIG: &str = "config.toml";
 const DEFAULT_USE_REST: bool = true;
 const DEFAULT_RPC_PORT: u16 = 8332;
-
-pub type BoxedSyncSendNode = Arc<dyn Node + Send + Sync>;
 
 #[derive(Clone, Deserialize, Serialize, Debug)]
 pub enum NetworkType {
@@ -57,7 +52,6 @@ pub struct Config {
     pub address: SocketAddr,
     pub networks: Vec<Network>,
     pub rss_base_url: String,
-    pub mine_info: HashMap<u32, NetworkMineInfo>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -81,7 +75,7 @@ pub struct Network {
     pub visible_heights_from_tip: usize,
     pub extra_hotspot_heights: usize,
     pub network_type: NetworkType,
-    pub nodes: Vec<BoxedSyncSendNode>,
+    pub nodes: Vec<Arc<dyn Node>>,
 }
 
 impl fmt::Display for TomlNetwork {
@@ -197,69 +191,33 @@ fn parse_config(config_str: &str) -> Result<Config, ConfigError> {
 
     let mut networks: Vec<Network> = vec![];
     let mut network_ids: Vec<u32> = vec![];
-    let mut mine_info: HashMap<u32, NetworkMineInfo> = HashMap::new();
 
     for toml_network in toml_config.networks.iter() {
         let network_type = toml_network.network_type.as_bitcoin_network();
-        let mut nodes: Vec<BoxedSyncSendNode> = vec![];
+        let mut nodes: Vec<Arc<dyn Node>> = vec![];
         let mut node_ids: Vec<u32> = vec![];
-        let mut mine_nodes: HashMap<u32, MineableNodeInfo> = HashMap::new();
 
         for toml_node in toml_network.nodes.iter() {
-            let backend = toml_node.client_implementation.parse::<Backend>()?;
-
             match parse_toml_node(toml_node, network_type) {
                 Ok(node) => {
-                    if !node_ids.contains(&node.info().id) {
-                        node_ids.push(node.info().id);
-                        nodes.push(node);
-                    } else {
+                    let node_id = node.info().id;
+                    if node_ids.contains(&node_id) {
                         error!(
                             "Duplicate node id {}: The node {} could not be loaded.",
-                            node.info().id,
+                            node_id,
                             node.info()
                         );
                         return Err(ConfigError::DuplicateNodeId);
                     }
+                    node_ids.push(node_id);
+                    nodes.push(node);
                 }
                 Err(e) => {
                     error!("Error while parsing a node configuration: {}", toml_node);
                     return Err(e);
                 }
             }
-
-            // Extract mine connection info for Bitcoin Core nodes
-            if matches!(backend, Backend::BitcoinCore) {
-                let port = toml_node.rpc_port.unwrap_or(DEFAULT_RPC_PORT);
-                let auth = if let Some(ref cookie) = toml_node.rpc_cookie_file {
-                    Some(MineAuth::CookieFile(cookie.clone()))
-                } else if let (Some(user), Some(pass)) =
-                    (&toml_node.rpc_user, &toml_node.rpc_password)
-                {
-                    Some(MineAuth::UserPass(user.clone(), pass.clone()))
-                } else {
-                    None
-                };
-                if let Some(auth) = auth {
-                    mine_nodes.insert(
-                        toml_node.id,
-                        MineableNodeInfo {
-                            rpc_host: toml_node.rpc_host.clone(),
-                            rpc_port: port,
-                            rpc_auth: auth,
-                        },
-                    );
-                }
-            }
         }
-
-        mine_info.insert(
-            toml_network.id,
-            NetworkMineInfo {
-                network_type: toml_network.network_type.clone(),
-                nodes: mine_nodes,
-            },
-        );
 
         match parse_toml_network(toml_network, nodes) {
             Ok(network) => {
@@ -294,13 +252,12 @@ fn parse_config(config_str: &str) -> Result<Config, ConfigError> {
         address: SocketAddr::from_str(&toml_config.address)?,
         rss_base_url: toml_config.rss_base_url.unwrap_or_default().clone(),
         networks,
-        mine_info,
     })
 }
 
 fn parse_toml_network(
     toml_network: &TomlNetwork,
-    nodes: Vec<BoxedSyncSendNode>,
+    nodes: Vec<Arc<dyn Node>>,
 ) -> Result<Network, ConfigError> {
     Ok(Network {
         id: toml_network.id,
@@ -317,7 +274,7 @@ fn parse_toml_network(
 fn parse_toml_node(
     toml_node: &TomlNode,
     network_type: BitcoinNetwork,
-) -> Result<BoxedSyncSendNode, ConfigError> {
+) -> Result<Arc<dyn Node>, ConfigError> {
     let client_implementation = toml_node.client_implementation.parse::<Backend>()?;
 
     let node_info = NodeInfo {
@@ -328,8 +285,8 @@ fn parse_toml_node(
         network_type,
     };
 
-    let node: BoxedSyncSendNode = match client_implementation {
-        Backend::BitcoinCore => Arc::new(BitcoinCoreNode::new(
+    match client_implementation {
+        Backend::BitcoinCore => Ok(Arc::new(BitcoinCoreNode::new(
             node_info,
             format!(
                 "{}:{}",
@@ -338,13 +295,13 @@ fn parse_toml_node(
             ),
             parse_rpc_auth(toml_node)?,
             toml_node.use_rest.unwrap_or(DEFAULT_USE_REST),
-        )),
+        ))),
         Backend::Btcd => {
             if toml_node.rpc_user.is_none() || toml_node.rpc_password.is_none() {
                 return Err(ConfigError::NoBtcdRpcAuth);
             }
 
-            Arc::new(BtcdNode::new(
+            let node: Arc<dyn Node> = Arc::new(BtcdNode::new(
                 node_info,
                 format!(
                     "{}:{}",
@@ -356,19 +313,22 @@ fn parse_toml_node(
                     .rpc_password
                     .clone()
                     .expect("a rpc_password for btcd"),
-            ))
+            ));
+            Ok(node)
         }
-        Backend::Esplora => Arc::new(Esplora::new(node_info, toml_node.rpc_host.clone())),
+        Backend::Esplora => Ok(Arc::new(Esplora::new(
+            node_info,
+            toml_node.rpc_host.clone(),
+        ))),
         Backend::Electrum => {
             let url = format!(
                 "{}:{}",
                 toml_node.rpc_host,
                 toml_node.rpc_port.unwrap_or(50002)
             );
-            Arc::new(Electrum::new(node_info, url))
+            Ok(Arc::new(Electrum::new(node_info, url)))
         }
-    };
-    Ok(node)
+    }
 }
 
 #[cfg(test)]
@@ -508,7 +468,7 @@ mod tests {
         ) {
             Ok(config) => {
                 let network = &config.networks[0];
-                let node: &BoxedSyncSendNode = &network.nodes[0];
+                let node = &network.nodes[0];
                 let node_info = node.info();
                 assert_eq!(node_info.name, "Esplora Node");
                 assert_eq!(node_info.id, 123);
@@ -551,7 +511,7 @@ mod tests {
         ) {
             Ok(config) => {
                 let network = &config.networks[0];
-                let node: &BoxedSyncSendNode = &network.nodes[0];
+                let node = &network.nodes[0];
                 let node_info = node.info();
                 assert_eq!(node_info.name, "Electrum");
                 assert_eq!(node_info.id, 421);
@@ -672,8 +632,8 @@ mod tests {
     }
 
     #[test]
-    fn legacy_max_interesting_heights_rejected() {
-        match parse_config(
+    fn bitcoincore_and_other_nodes_parse_into_network_nodes() {
+        let config = parse_config(
             r#"
             database_path = ""
             query_interval = 15
@@ -682,23 +642,38 @@ mod tests {
 
             [[networks]]
             id = 1
-            name = "legacy"
+            name = "controls"
             description = ""
             first_tracked_height = 0
-            network_type = "Mainnet"
-            max_interesting_heights = 100
+            visible_heights_from_tip = 10
+            extra_hotspot_heights = 2
+            network_type = "Regtest"
 
                 [[networks.nodes]]
-                id = 1
-                name = "Esplora Node"
-                description = "test"
+                id = 11
+                name = "core"
+                description = "bitcoincore node"
+                rpc_host = "127.0.0.1"
+                rpc_port = 18443
+                rpc_user = "user"
+                rpc_password = "pass"
+                client_implementation = "bitcoincore"
+
+                [[networks.nodes]]
+                id = 12
+                name = "esplora"
+                description = "esplora node"
                 rpc_host = "https://esplora.example.org/api"
                 client_implementation = "esplora"
         "#,
-        ) {
-            Ok(_) => panic!("legacy max_interesting_heights should fail parsing"),
-            Err(ConfigError::TomlError(_)) => {}
-            Err(e) => panic!("expected TOML parse error for legacy key, got {}", e),
-        }
+        )
+        .expect("config should parse");
+
+        let network = &config.networks[0];
+        assert_eq!(network.nodes.len(), 2);
+        assert_eq!(network.nodes[0].info().id, 11);
+        assert_eq!(network.nodes[0].info().implementation, "Bitcoin Core");
+        assert_eq!(network.nodes[1].info().id, 12);
+        assert_eq!(network.nodes[1].info().implementation, "esplora");
     }
 }

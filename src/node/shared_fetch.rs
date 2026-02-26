@@ -309,10 +309,7 @@ fn jsonrpc_request(
 
     let token = format!("{}:{}", auth.user, auth.password);
 
-    debug!(
-        "JSON-RPC request with user='{}': {:?}",
-        auth.user, request
-    );
+    debug!("JSON-RPC request with user='{}': {:?}", auth.user, request);
 
     let res = minreq::post(&auth.url)
         .with_header(

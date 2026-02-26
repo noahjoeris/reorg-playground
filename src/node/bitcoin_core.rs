@@ -12,6 +12,8 @@ use bitcoincore_rpc::{Auth, Client, RpcApi};
 use log::debug;
 use tokio::task;
 
+const MINER_WALLET: &str = "miner";
+
 #[derive(Hash, Clone)]
 pub struct BitcoinCoreNode {
     info: NodeInfo,
@@ -30,12 +32,11 @@ impl BitcoinCoreNode {
         }
     }
 
-    fn rpc_client(&self) -> Result<Client, FetchError> {
+    fn rpc_client_with_url(&self, rpc_url: &str) -> Result<Client, FetchError> {
         let (user, pass) = self.rpc_auth.clone().get_user_pass()?;
-        let rpc_url = self.normalized_rpc_url();
 
         let mut transport_builder = jsonrpc::minreq_http::MinreqHttpTransport::builder()
-            .url(&rpc_url)
+            .url(rpc_url)
             .map_err(|e| {
                 FetchError::DataError(format!(
                     "Could not set RPC URL '{}' for node {}: {}",
@@ -52,6 +53,18 @@ impl BitcoinCoreNode {
         Ok(Client::from_jsonrpc(jsonrpc::Client::with_transport(
             transport_builder.build(),
         )))
+    }
+
+    fn rpc_client(&self) -> Result<Client, FetchError> {
+        self.rpc_client_with_url(&self.normalized_rpc_url())
+    }
+
+    fn wallet_rpc_url(&self, wallet: &str) -> String {
+        format!(
+            "{}/wallet/{}",
+            self.normalized_rpc_url().trim_end_matches('/'),
+            wallet
+        )
     }
 
     fn normalized_rpc_url(&self) -> String {
@@ -72,11 +85,46 @@ impl BitcoinCoreNode {
         result.map_err(FetchError::from)
     }
 
+    async fn with_wallet_rpc<T, F>(&self, wallet: &str, op: F) -> Result<T, FetchError>
+    where
+        T: Send + 'static,
+        F: FnOnce(Client) -> Result<T, bitcoincore_rpc::Error> + Send + 'static,
+    {
+        let rpc = self.rpc_client_with_url(&self.wallet_rpc_url(wallet))?;
+        let result = task::spawn_blocking(move || op(rpc)).await?;
+        result.map_err(FetchError::from)
+    }
+
     fn not_supported(&self, operation: &'static str) -> FetchError {
         FetchError::NotSupported {
             node: self.info.implementation.clone(),
             operation,
         }
+    }
+
+    async fn ensure_wallet_loaded(&self, wallet: &str) -> Result<(), FetchError> {
+        let wallet_name = wallet.to_string();
+        let loaded_wallets = self.with_rpc(|rpc| rpc.list_wallets()).await?;
+        if loaded_wallets.iter().any(|w| w == &wallet_name) {
+            return Ok(());
+        }
+
+        let wallet_for_load = wallet_name.clone();
+        if self
+            .with_rpc(move |rpc| rpc.load_wallet(&wallet_for_load).map(|_| ()))
+            .await
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        let wallet_for_create = wallet_name.clone();
+        self.with_rpc(move |rpc| {
+            rpc.create_wallet(&wallet_for_create, None, None, None, None)
+                .map(|_| ())
+        })
+        .await?;
+        Ok(())
     }
 }
 
@@ -240,5 +288,57 @@ impl Node for BitcoinCoreNode {
 
         active_new_headers.append(&mut nonactive_new_headers);
         Ok((active_new_headers, headers_needing_miners))
+    }
+
+    async fn mine_new_blocks(&self, count: u64) -> Result<Vec<BlockHash>, FetchError> {
+        if count == 0 {
+            return Err(FetchError::DataError(
+                "mine_new_blocks requires count > 0".to_string(),
+            ));
+        }
+        if self.info.network_type != bitcoin::Network::Regtest {
+            return Err(self.not_supported("mine_new_blocks"));
+        }
+
+        self.ensure_wallet_loaded(MINER_WALLET).await?;
+        let mining_address = self
+            .with_wallet_rpc(MINER_WALLET, |rpc| rpc.get_new_address(None, None))
+            .await?
+            .assume_checked();
+        self.with_rpc(move |rpc| rpc.generate_to_address(count, &mining_address))
+            .await
+    }
+
+    async fn set_network_active(&self, active: bool) -> Result<(), FetchError> {
+        self.with_rpc(move |rpc| rpc.set_network_active(active))
+            .await?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_node(network_type: bitcoin::Network) -> BitcoinCoreNode {
+        BitcoinCoreNode::new(
+            NodeInfo {
+                id: 1,
+                name: "test".to_string(),
+                description: "test node".to_string(),
+                implementation: "Bitcoin Core".to_string(),
+                network_type,
+            },
+            "127.0.0.1:18443".to_string(),
+            Auth::UserPass("user".to_string(), "pass".to_string()),
+            true,
+        )
+    }
+
+    #[tokio::test]
+    async fn mine_new_blocks_rejects_zero_count() {
+        let node = test_node(bitcoin::Network::Regtest);
+        let result = node.mine_new_blocks(0).await;
+        assert!(matches!(result, Err(FetchError::DataError(_))));
     }
 }
