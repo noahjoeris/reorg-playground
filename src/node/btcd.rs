@@ -1,13 +1,18 @@
 use crate::error::{FetchError, JsonRPCError};
-use crate::node::shared_fetch;
+use crate::node::shared_fetch::{self, RpcAuth, jsonrpc_call};
 use crate::node::{HeaderLocator, Node, NodeInfo};
 use crate::types::{ChainTip, HeaderInfo, Tree};
 use async_trait::async_trait;
 use bitcoin_pool_identification::{PoolIdentification, default_data};
 use bitcoincore_rpc::bitcoin;
+use bitcoincore_rpc::bitcoin::Block;
 use bitcoincore_rpc::bitcoin::BlockHash;
 use bitcoincore_rpc::bitcoin::blockdata::block::Header;
+use serde_json::Value;
 use tokio::task;
+
+const BITCOIN_BLOCK_HEADER_HEX_LENGTH: usize = 80 * 2;
+const BITCOIN_BLOCK_HASH_HEX_LENGTH: usize = 32 * 2;
 
 #[derive(Hash, Clone)]
 pub struct BtcdNode {
@@ -32,8 +37,12 @@ impl BtcdNode {
         }
     }
 
-    fn rpc_url(&self) -> String {
-        format!("http://{}/", self.rpc_endpoint)
+    fn rpc_auth(&self) -> RpcAuth {
+        RpcAuth {
+            url: format!("http://{}/", self.rpc_endpoint),
+            user: self.rpc_user.clone(),
+            password: self.rpc_password.clone(),
+        }
     }
 }
 
@@ -52,28 +61,54 @@ impl Node for BtcdNode {
     }
 
     async fn block_header(&self, locator: HeaderLocator) -> Result<Header, FetchError> {
-        let url = self.rpc_url();
-        let user = self.rpc_user.clone();
-        let password = self.rpc_password.clone();
+        let auth = self.rpc_auth();
 
-        match locator {
-            HeaderLocator::Hash(hash) => {
-                task::spawn_blocking(move || {
-                    crate::jsonrpc::btcd_blockheader(&url, &user, &password, &hash.to_string())
-                        .map_err(FetchError::BtcdRPC)
-                })
-                .await?
+        task::spawn_blocking(move || {
+            let hash_str = match locator {
+                HeaderLocator::Hash(hash) => hash.to_string(),
+                HeaderLocator::Height(height) => {
+                    let hash_hex: String =
+                        jsonrpc_call("getblockhash", vec![Value::from(height)], &auth)
+                            .map_err(FetchError::BtcdRPC)?
+                            .unwrap_or_default();
+                    if hash_hex.len() != BITCOIN_BLOCK_HASH_HEX_LENGTH {
+                        return Err(FetchError::BtcdRPC(
+                            JsonRPCError::RpcUnexpectedResponseContents(format!(
+                                "getblockhash: expected {} hex chars but got {}: {}",
+                                BITCOIN_BLOCK_HASH_HEX_LENGTH,
+                                hash_hex.len(),
+                                hash_hex
+                            )),
+                        ));
+                    }
+                    hash_hex
+                }
+            };
+
+            let header_hex: String = jsonrpc_call(
+                "getblockheader",
+                vec![Value::from(hash_str.as_str()), Value::from(false)],
+                &auth,
+            )
+            .map_err(FetchError::BtcdRPC)?
+            .unwrap_or_default();
+            if header_hex.len() != BITCOIN_BLOCK_HEADER_HEX_LENGTH {
+                return Err(FetchError::BtcdRPC(
+                    JsonRPCError::RpcUnexpectedResponseContents(format!(
+                        "getblockheader: expected {} hex chars but got {}: {}",
+                        BITCOIN_BLOCK_HEADER_HEX_LENGTH,
+                        header_hex.len(),
+                        header_hex
+                    )),
+                ));
             }
-            HeaderLocator::Height(height) => {
-                task::spawn_blocking(move || {
-                    let hash = crate::jsonrpc::btcd_blockhash(&url, &user, &password, height)
-                        .map_err(FetchError::BtcdRPC)?;
-                    crate::jsonrpc::btcd_blockheader(&url, &user, &password, &hash.to_string())
-                        .map_err(FetchError::BtcdRPC)
-                })
-                .await?
-            }
-        }
+            let header_bytes =
+                hex::decode(header_hex).map_err(|e| FetchError::BtcdRPC(e.into()))?;
+            let header: Header = bitcoin::consensus::deserialize(&header_bytes)
+                .map_err(|e| FetchError::BtcdRPC(e.into()))?;
+            Ok(header)
+        })
+        .await?
     }
 
     async fn get_miner_pool(
@@ -83,20 +118,28 @@ impl Node for BtcdNode {
         network: bitcoin::Network,
     ) -> Result<Option<String>, FetchError> {
         let hash = *hash;
-        let url = self.rpc_url();
-        let user = self.rpc_user.clone();
-        let password = self.rpc_password.clone();
+        let auth = self.rpc_auth();
 
-        let coinbase =
-            task::spawn_blocking(move || {
-                let block = crate::jsonrpc::btcd_block(&url, &user, &password, &hash.to_string())
-                    .map_err(FetchError::BtcdRPC)?;
+        let coinbase = task::spawn_blocking(move || {
+            let hash_str = hash.to_string();
+            let block_hex: String = jsonrpc_call(
+                "getblock",
+                vec![Value::from(hash_str.as_str()), Value::from(0i8)],
+                &auth,
+            )
+            .map_err(FetchError::BtcdRPC)?
+            .unwrap_or_default();
+            let block_bytes = hex::decode(block_hex).map_err(|e| FetchError::BtcdRPC(e.into()))?;
+            let block: Block = bitcoin::consensus::deserialize(&block_bytes)
+                .map_err(|e| FetchError::BtcdRPC(e.into()))?;
 
-                block.txdata.into_iter().next().ok_or_else(|| {
-                    FetchError::DataError(format!("Block {} has no transactions", hash))
-                })
-            })
-            .await??;
+            block
+                .txdata
+                .into_iter()
+                .next()
+                .ok_or_else(|| FetchError::DataError(format!("Block {} has no transactions", hash)))
+        })
+        .await??;
 
         let miner_identification_data = default_data(network);
         Ok(coinbase
@@ -105,12 +148,16 @@ impl Node for BtcdNode {
     }
 
     async fn tips(&self) -> Result<Vec<ChainTip>, FetchError> {
-        let url = self.rpc_url();
-        let user = self.rpc_user.clone();
-        let password = self.rpc_password.clone();
+        let auth = self.rpc_auth();
 
         task::spawn_blocking(move || {
-            crate::jsonrpc::btcd_chaintips(&url, &user, &password).map_err(FetchError::BtcdRPC)
+            jsonrpc_call::<Vec<ChainTip>>("getchaintips", vec![], &auth)
+                .map_err(FetchError::BtcdRPC)?
+                .ok_or_else(|| {
+                    FetchError::BtcdRPC(JsonRPCError::JsonRpc(
+                        "getchaintips response was empty".to_string(),
+                    ))
+                })
         })
         .await?
     }

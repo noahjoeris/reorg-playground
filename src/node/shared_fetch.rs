@@ -1,12 +1,18 @@
 //! Shared header-fetch orchestration used by all node backend implementations.
 
-use crate::error::FetchError;
+use crate::error::{FetchError, JsonRPCError};
 use crate::node::{ActiveHeadersBatchProvider, HeaderLocator, Node};
 use crate::types::{ChainTip, ChainTipStatus, HeaderInfo, Tree};
+use base64::prelude::*;
 use bitcoincore_rpc::bitcoin::BlockHash;
 use bitcoincore_rpc::bitcoin::blockdata::block::Header;
-use log::debug;
+use log::{debug, warn};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::cmp::max;
+use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::mpsc::UnboundedSender;
 
 /// How many active-chain heights to fetch per batch request.
@@ -209,6 +215,127 @@ fn send_progress_batch(
 async fn tree_contains_hash(tree: &Tree, hash: &BlockHash) -> bool {
     let tree_locked = tree.lock().await;
     tree_locked.index.contains_key(hash)
+}
+
+// -- JSON-RPC transport shared by RPC-backed node implementations --
+
+const JSON_RPC_VERSION: &str = "1.0";
+static NEXT_JSON_RPC_ID: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Serialize, Debug)]
+struct Request {
+    jsonrpc: String,
+    id: u64,
+    method: String,
+    params: Vec<Value>,
+}
+
+#[derive(Deserialize, Clone)]
+struct Error {
+    code: i32,
+    message: String,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Error(code={}, message='{}')", self.code, self.message)
+    }
+}
+
+#[derive(Deserialize)]
+struct Response<T> {
+    jsonrpc: String,
+    result: Option<T>,
+    error: Option<Error>,
+    id: u64,
+}
+
+impl<T> Response<T> {
+    fn check(&self, req_method: &str, expected_id: u64) -> Option<JsonRPCError> {
+        if self.id != expected_id {
+            warn!(
+                "JSON-RPC response id is {} but expected {}",
+                self.id, expected_id
+            );
+        }
+        if self.jsonrpc != JSON_RPC_VERSION {
+            warn!(
+                "JSON-RPC response version is {} but expected {}",
+                self.jsonrpc, JSON_RPC_VERSION
+            );
+        }
+        if let Some(error) = self.error.clone() {
+            return Some(JsonRPCError::JsonRpc(format!(
+                "JSON RPC response for request '{}' contains error: {}",
+                req_method, error
+            )));
+        }
+        None
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct RpcAuth {
+    pub url: String,
+    pub user: String,
+    pub password: String,
+}
+
+pub(crate) fn jsonrpc_call<T: DeserializeOwned>(
+    method: &str,
+    params: Vec<Value>,
+    auth: &RpcAuth,
+) -> Result<Option<T>, JsonRPCError> {
+    let (id, res) = jsonrpc_request(method, params, auth)?;
+    let response: Response<T> = res.json()?;
+    if let Some(e) = response.check(method, id) {
+        return Err(e);
+    }
+    Ok(response.result)
+}
+
+fn jsonrpc_request(
+    method: &str,
+    params: Vec<Value>,
+    auth: &RpcAuth,
+) -> Result<(u64, minreq::Response), JsonRPCError> {
+    let id = NEXT_JSON_RPC_ID.fetch_add(1, Ordering::Relaxed);
+    let request = Request {
+        jsonrpc: String::from(JSON_RPC_VERSION),
+        id,
+        method: method.to_string(),
+        params,
+    };
+
+    let token = format!("{}:{}", auth.user, auth.password);
+
+    debug!(
+        "JSON-RPC request with user='{}': {:?}",
+        auth.user, request
+    );
+
+    let res = minreq::post(&auth.url)
+        .with_header(
+            "Authorization",
+            format!("Basic {}", BASE64_STANDARD.encode(&token)),
+        )
+        .with_header("content-type", "application/json")
+        .with_json(&request)?
+        .with_timeout(8)
+        .send()?;
+
+    debug!("JSON-RPC response for {}: {:?}", method, res.as_str());
+
+    if res.status_code != 200 {
+        return Err(JsonRPCError::Http(format!(
+            "HTTP request failed: {} {}: {}",
+            res.status_code,
+            res.reason_phrase,
+            res.as_str()?
+        )));
+    }
+
+    Ok((id, res))
 }
 
 #[cfg(test)]

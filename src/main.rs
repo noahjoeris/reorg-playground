@@ -23,7 +23,6 @@ mod config;
 mod db;
 mod error;
 mod headertree;
-mod jsonrpc;
 mod node;
 mod rss;
 mod types;
