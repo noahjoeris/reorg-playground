@@ -24,6 +24,7 @@ const panelGlassClass =
 const panelGlassStrongClass =
   '[background:var(--surface-panel-strong)] border border-accent/25 shadow-[var(--elevation-lift)] backdrop-blur-[12px]'
 const metricPillClass = 'rounded-full border border-border/80 bg-card/70 px-2.5 py-[3px] text-[11px] tracking-[0.02em]'
+const REPO_URL = 'https://github.com/noahjoeris/reorg-playground'
 
 const EMPTY_FOLD_META: FoldMetadata = {
   potentialFoldedSegmentCount: 0,
@@ -209,6 +210,17 @@ function App() {
               <div className="flex shrink-0 items-center gap-2">
                 <NetworkSelector networks={networks} selectedId={selectedNetworkId} onChange={handleNetworkChange} />
                 <ThemeToggle />
+                <Button asChild variant="ghost" size="icon-sm">
+                  <a
+                    href={REPO_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Open GitHub repository"
+                    title="Open GitHub repository"
+                  >
+                    <img src="/icons/github.svg" alt="" className="size-4 dark:invert" />
+                  </a>
+                </Button>
               </div>
             </div>
 
