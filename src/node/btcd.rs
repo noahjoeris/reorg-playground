@@ -9,6 +9,7 @@ use bitcoincore_rpc::bitcoin::Block;
 use bitcoincore_rpc::bitcoin::BlockHash;
 use bitcoincore_rpc::bitcoin::blockdata::block::Header;
 use serde_json::Value;
+use std::str::FromStr;
 use tokio::task;
 
 const BITCOIN_BLOCK_HEADER_HEX_LENGTH: usize = 80 * 2;
@@ -190,5 +191,63 @@ impl Node for BtcdNode {
             shared_fetch::miner_hashes_for_new_headers(&active_new_headers, &nonactive_new_headers);
         active_new_headers.append(&mut nonactive_new_headers);
         Ok((active_new_headers, headers_needing_miners))
+    }
+
+    async fn mine_new_blocks(&self, count: u64) -> Result<Vec<BlockHash>, FetchError> {
+        if count == 0 {
+            return Err(FetchError::DataError(
+                "mine_new_blocks requires count > 0".to_string(),
+            ));
+        }
+        if self.info.network_type != bitcoin::Network::Regtest {
+            return Err(FetchError::NotSupported {
+                node: self.info.implementation.clone(),
+                operation: "mine_new_blocks",
+            });
+        }
+
+        let auth = self.rpc_auth();
+        task::spawn_blocking(move || {
+            let hashes: Vec<String> = jsonrpc_call("generate", vec![Value::from(count)], &auth)
+                .map_err(FetchError::BtcdRPC)?
+                .ok_or_else(|| {
+                    FetchError::BtcdRPC(JsonRPCError::JsonRpc(
+                        "generate response was empty".to_string(),
+                    ))
+                })?;
+
+            hashes
+                .into_iter()
+                .map(|hash| BlockHash::from_str(&hash).map_err(|e| FetchError::BtcdRPC(e.into())))
+                .collect()
+        })
+        .await?
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_node(network_type: bitcoin::Network) -> BtcdNode {
+        BtcdNode::new(
+            NodeInfo {
+                id: 1,
+                name: "test".to_string(),
+                description: "test node".to_string(),
+                implementation: "btcd".to_string(),
+                network_type,
+            },
+            "127.0.0.1:18334".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        )
+    }
+
+    #[tokio::test]
+    async fn mine_new_blocks_rejects_zero_count() {
+        let node = test_node(bitcoin::Network::Regtest);
+        let result = node.mine_new_blocks(0).await;
+        assert!(matches!(result, Err(FetchError::DataError(_))));
     }
 }

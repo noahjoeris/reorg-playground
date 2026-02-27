@@ -104,3 +104,8 @@ export type MineBlockResponse = {
   success: boolean
   error?: string
 }
+
+export type SetNodeP2PConnectionResponse = {
+  success: boolean
+  error?: string
+}

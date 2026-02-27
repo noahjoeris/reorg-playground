@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchNetworks } from '../api'
+import { fetchNetworks } from '../services/networksService'
 import type { Network } from '../types'
 
 export function useNetworks() {

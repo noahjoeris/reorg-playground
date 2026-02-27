@@ -1,11 +1,11 @@
 import { Handle, type Node, type NodeProps, Position } from '@xyflow/react'
 import { memo } from 'react'
 import { MineBlockButton } from './MineBlockButton'
-import type { NodeInfo, ProcessedBlock } from './types'
+import type { Network, NodeInfo, ProcessedBlock } from './types'
 
 type MineTreeNodeData = {
   block: ProcessedBlock
-  networkId: number
+  network: Network
   nodes: NodeInfo[]
 }
 
@@ -26,7 +26,7 @@ function MineTreeNodeComponent({ data, selected }: NodeProps<MineTreeNodeType>) 
       <div className="pl-3">
         <MineBlockButton
           block={data.block}
-          networkId={data.networkId}
+          network={data.network}
           nodes={data.nodes}
           label="Mine block"
           buttonClassName={[

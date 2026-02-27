@@ -5,11 +5,13 @@ import type { MineTreeNodeType } from './MineTreeNode'
 import {
   type DataResponse,
   MAX_PREV_ID,
+  type Network,
   type NodeInfo,
   type ProcessedBlock,
   type TipStatus,
   type TipStatusEntry,
 } from './types'
+import { isRegtestOrSignet } from './utils'
 
 const H_GAP = 300
 const V_GAP = 160
@@ -254,8 +256,7 @@ export function buildReactFlowGraph(
   blocks: ProcessedBlock[],
   onBlockClick: (block: ProcessedBlock) => void,
   selectedBlockId: number | null = null,
-  networkId: number | null = null,
-  networkType: string | null = null,
+  network: Network | null = null,
   allNodes: NodeInfo[] = [],
   globalCollapsed: boolean = false,
 ): { nodes: FlowNodeType[]; edges: Edge[]; foldMeta: FoldMetadata } {
@@ -503,7 +504,7 @@ export function buildReactFlowGraph(
   const mineNodes: MineTreeNodeType[] = []
   const mineEdges: Edge[] = []
 
-  if (networkType === 'Regtest' && networkId !== null) {
+  if (network && isRegtestOrSignet(network)) {
     for (const block of visibleBlocks) {
       const activeEntry = block.tipStatuses.find(tipStatus => tipStatus.status === 'active')
       if (!activeEntry) continue
@@ -528,7 +529,7 @@ export function buildReactFlowGraph(
         selected: highlightsSelected,
         data: {
           block,
-          networkId,
+          network,
           nodes: allNodes,
         },
       })

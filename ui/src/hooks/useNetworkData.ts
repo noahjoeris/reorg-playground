@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createChangesEventSource, fetchData } from '../api'
+import { createCacheChangeEventSource } from '../services/cacheChangeEventService'
+import { fetchNetworkSnapshot } from '../services/networkSnapshotService'
 import type { ConnectionStatus, DataResponse } from '../types'
 
 export function useNetworkData(networkId: number | null) {
@@ -13,7 +14,7 @@ export function useNetworkData(networkId: number | null) {
     (showLoading: boolean) => {
       if (networkId === null) return
       if (showLoading) setLoading(true)
-      fetchData(networkId)
+      fetchNetworkSnapshot(networkId)
         .then(d => {
           setData(d)
           setError(null)
@@ -39,7 +40,7 @@ export function useNetworkData(networkId: number | null) {
     if (networkId === null) return
 
     setConnectionStatus('connecting')
-    const es = createChangesEventSource()
+    const es = createCacheChangeEventSource()
 
     es.onopen = () => setConnectionStatus('connected')
     es.onerror = () => {

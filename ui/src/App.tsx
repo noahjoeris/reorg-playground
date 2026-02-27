@@ -121,12 +121,11 @@ function App() {
       processedBlocks,
       block => handleBlockClick(block.id),
       selectedBlockId,
-      selectedNetworkId,
-      selectedNetwork?.network_type ?? null,
+      selectedNetwork,
       data?.nodes ?? [],
       globalCollapsed,
     )
-  }, [processedBlocks, handleBlockClick, selectedBlockId, selectedNetworkId, selectedNetwork, data, globalCollapsed])
+  }, [processedBlocks, handleBlockClick, selectedBlockId, selectedNetwork, data, globalCollapsed])
 
   // Clear selection if the selected block is hidden by folding
   useEffect(() => {
@@ -244,9 +243,9 @@ function App() {
           </div>
         </header>
 
-        {data && !isNodePanelCollapsed && (
+        {data && selectedNetwork !== null && !isNodePanelCollapsed && (
           <div id="node-health-panel">
-            <ActiveNodeInfoCard nodes={data.nodes} />
+            <ActiveNodeInfoCard key={selectedNetwork.id} network={selectedNetwork} nodes={data.nodes} />
           </div>
         )}
 

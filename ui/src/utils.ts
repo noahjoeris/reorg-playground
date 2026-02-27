@@ -11,6 +11,12 @@ export function formatMinerLabel(miner: string): string {
   return trimmed
 }
 
+export function isRegtestOrSignet(
+  network: Pick<import('./types').Network, 'network_type'> | null | undefined,
+): boolean {
+  return network?.network_type === 'Regtest' || network?.network_type === 'Signet'
+}
+
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 

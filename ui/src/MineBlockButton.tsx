@@ -3,11 +3,11 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useMineBlock } from '@/hooks/useMineBlock'
 import { cn } from '@/utils'
-import type { NodeInfo, ProcessedBlock } from './types'
+import type { Network, NodeInfo, ProcessedBlock } from './types'
 
 type MineBlockButtonProps = {
   block: ProcessedBlock
-  networkId: number
+  network: Network
   nodes: NodeInfo[]
   label?: string
   buttonClassName?: string
@@ -15,30 +15,38 @@ type MineBlockButtonProps = {
 
 export function MineBlockButton({
   block,
-  networkId,
+  network,
   nodes,
   label = 'Mine Block',
   buttonClassName,
 }: MineBlockButtonProps) {
-  const { mine, loading, error } = useMineBlock()
+  const activeEntry = block.tipStatuses.find(ts => ts.status === 'active')
+  const activeNodeNames = new Set(activeEntry?.nodeNames ?? [])
+  const candidateActiveNodes = nodes.filter(n => activeNodeNames.has(n.name))
+
+  const {
+    mine,
+    loading,
+    error,
+    featureEnabled: miningControlFeatureEnabled,
+    isEnabledByNodeId: miningIsEnabledByNodeId,
+  } = useMineBlock(network, candidateActiveNodes)
   const [dialogOpen, setDialogOpen] = useState(false)
 
-  const activeEntry = block.tipStatuses.find(ts => ts.status === 'active')
   if (!activeEntry) return null
 
-  const activeNodeNames = activeEntry.nodeNames
-  const activeNodes = nodes.filter(n => activeNodeNames.includes(n.name) && n.implementation === 'Bitcoin Core')
+  const enabledNodes = candidateActiveNodes.filter(node => miningIsEnabledByNodeId[node.id] ?? false)
 
-  if (activeNodes.length === 0) return null
+  if (enabledNodes.length === 0) return null
 
-  const handleMine = async (nodeId: number) => {
-    await mine(networkId, nodeId)
+  const handleMine = async (node: NodeInfo) => {
+    await mine(node)
     setDialogOpen(false)
   }
 
   const handleClick = () => {
-    if (activeNodes.length === 1) {
-      handleMine(activeNodes[0].id)
+    if (enabledNodes.length === 1) {
+      handleMine(enabledNodes[0])
     } else {
       setDialogOpen(true)
     }
@@ -54,7 +62,7 @@ export function MineBlockButton({
           e.stopPropagation()
           handleClick()
         }}
-        disabled={loading}
+        disabled={loading || !miningControlFeatureEnabled}
       >
         {loading ? 'Mining...' : label}
       </Button>
@@ -71,13 +79,13 @@ export function MineBlockButton({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 pt-2">
-            {activeNodes.map(node => (
+            {enabledNodes.map(node => (
               <Button
                 key={node.id}
                 variant="outline"
                 className="w-full justify-start"
-                onClick={() => handleMine(node.id)}
-                disabled={loading}
+                onClick={() => handleMine(node)}
+                disabled={loading || !(miningIsEnabledByNodeId[node.id] ?? false)}
               >
                 {loading ? 'Mining...' : node.name}
                 <span className="ml-auto text-xs text-muted-foreground">{node.description}</span>

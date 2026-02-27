@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { type NodeInfo, TIP_STATUS_COLORS, TIP_STATUS_DESCRIPTIONS, TIP_STATUS_LABELS, type TipStatus } from './types'
+import { useNodeP2PConnection } from '@/hooks/useNodeP2PConnection'
+import {
+  type Network,
+  type NodeInfo,
+  TIP_STATUS_COLORS,
+  TIP_STATUS_DESCRIPTIONS,
+  TIP_STATUS_LABELS,
+  type TipStatus,
+} from './types'
 import { shortHash } from './utils'
 
 const RELATIVE_TIME_REFRESH_MS = 10_000
@@ -69,8 +78,15 @@ function NodeMetric({ label, value }: { label: string; value: string | number })
   )
 }
 
-export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
+export function ActiveNodeInfoCard({ network, nodes }: { network: Network; nodes: NodeInfo[] }) {
   const [, setTick] = useState(0)
+  const {
+    toggleNodeP2PConnection,
+    getNodeP2PConnectionActive,
+    isEnabledByNodeId: p2pControlIsEnabledByNodeId,
+    loadingByNodeId: p2pConnectionLoadingByNodeId,
+    errorByNodeId: p2pConnectionErrorByNodeId,
+  } = useNodeP2PConnection(network, nodes)
 
   useEffect(() => {
     const interval = window.setInterval(() => setTick(tick => tick + 1), RELATIVE_TIME_REFRESH_MS)
@@ -110,6 +126,10 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
           const activeHash = currentActiveTip?.hash ?? ''
           const lag = Math.max(0, maxHeight - activeHeight)
           const statusSummary = tipStatusSummary(node)
+          const supportsNodeP2PControl = p2pControlIsEnabledByNodeId[node.id] ?? false
+          const isP2PConnectionActive = getNodeP2PConnectionActive(node.id)
+          const p2pConnectionLoading = p2pConnectionLoadingByNodeId[node.id] ?? false
+          const p2pConnectionError = p2pConnectionErrorByNodeId[node.id]
 
           return (
             <Card
@@ -180,6 +200,22 @@ export function ActiveNodeInfoCard({ nodes }: { nodes: NodeInfo[] }) {
                     <TooltipContent>{formatAbsoluteTime(node.last_changed_timestamp)}</TooltipContent>
                   </Tooltip>
                 </div>
+
+                {supportsNodeP2PControl && (
+                  <div className="space-y-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      className="w-full rounded-full"
+                      onClick={() => void toggleNodeP2PConnection(node)}
+                      disabled={p2pConnectionLoading}
+                    >
+                      {p2pConnectionLoading ? 'Updating...' : isP2PConnectionActive ? 'Disable P2P' : 'Enable P2P'}
+                    </Button>
+                    {p2pConnectionError && <p className="text-[10px] text-destructive">{p2pConnectionError}</p>}
+                  </div>
+                )}
 
                 {statusSummary.length > 0 && (
                   <ul className="flex flex-wrap gap-1.5">
