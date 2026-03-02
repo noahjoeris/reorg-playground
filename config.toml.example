@@ -10,7 +10,7 @@ address = "127.0.0.1:2323" # Webserver listen address
 rss_base_url = ""
 
 [[networks]]
-id = 2
+id = 0
 name = "Mainnet"
 description = "Bitcoin Mainnet"
 
@@ -39,7 +39,7 @@ network_type = "Mainnet" # Mainnet | Testnet | Signet | Regtest
     client_implementation = "electrum"
 
 [[networks]]
-id = 3
+id = 1
 name = "Testnet"
 description = "Bitcoin Testnet"
 first_tracked_height = 4841135 
@@ -55,5 +55,40 @@ network_type = "Testnet"
     rpc_port = 443
     rpc_user = ""
     rpc_password = ""
+    use_rest = false
+    client_implementation = "bitcoincore"
+
+
+[[networks]]
+id = 2
+name = "Regtest"
+description = "Bitcoin Regtest (local dev)"
+first_tracked_height = 0 
+visible_heights_from_tip = 100 
+extra_hotspot_heights = 20 
+network_type = "Regtest"
+# Note: You can deploy two local regtest nodes via /scripts/start-regtest-pair.sh
+
+    [[networks.nodes]]
+    id = 0
+    name = "Node A"
+    description = "Local Bitcoin Core node (regtest)"
+    rpc_host = "127.0.0.1"
+    rpc_port = 18443
+    # rpc_cookie_file = ""
+    rpc_user = "reorg-playground"
+    rpc_password = "reorg-playground"
+    use_rest = false
+    client_implementation = "bitcoincore"
+
+    [[networks.nodes]]
+    id = 1
+    name = "Node B"
+    description = "Local Bitcoin Core node (regtest)"
+    rpc_host = "127.0.0.1"
+    rpc_port = 18453
+    # rpc_cookie_file = ""
+    rpc_user = "reorg-playground"
+    rpc_password = "reorg-playground"
     use_rest = false
     client_implementation = "bitcoincore"

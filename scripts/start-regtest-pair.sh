@@ -7,12 +7,12 @@ RPC_USER="reorg-playground"
 RPC_PASSWORD="reorg-playground"
 
 # Node A
-NODE_A_DATA_DIR="$HOME/Library/Application Support/Bitcoin/regtest-nodeA"
+NODE_A_DATA_DIR="$HOME/Library/Application Support/Bitcoin/regtest-nodeA" # Adapt to your system
 NODE_A_P2P_PORT="18444"
 NODE_A_RPC_PORT="18443"
 
 # Node B
-NODE_B_DATA_DIR="$HOME/Library/Application Support/Bitcoin/regtest-nodeB"
+NODE_B_DATA_DIR="$HOME/Library/Application Support/Bitcoin/regtest-nodeB" # Adapt to your system
 NODE_B_P2P_PORT="18454"
 NODE_B_RPC_PORT="18453"
 

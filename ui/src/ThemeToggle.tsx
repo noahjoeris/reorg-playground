@@ -1,20 +1,23 @@
 import { Moon, Sun } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { type ThemePreference, useTheme } from '@/hooks/useTheme'
+import { type ThemePreference } from '@/hooks/useTheme'
 
 const LABELS: Record<ThemePreference, string> = {
   light: 'Use dark theme',
   dark: 'Use light theme',
 }
 
-export function ThemeToggle() {
-  const { preference, cycle } = useTheme()
+type ThemeToggleProps = {
+  preference: ThemePreference
+  onToggle: () => void
+}
 
+export function ThemeToggle({ preference, onToggle }: ThemeToggleProps) {
   return (
     <Button
       variant="ghost"
       size="icon-sm"
-      onClick={cycle}
+      onClick={onToggle}
       aria-label={LABELS[preference]}
       title={LABELS[preference]}
       aria-pressed={preference === 'dark'}

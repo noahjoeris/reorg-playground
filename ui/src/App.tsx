@@ -7,6 +7,7 @@ import { Separator } from '@/components/ui/separator'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useNetworkData } from '@/hooks/useNetworkData'
 import { useNetworks } from '@/hooks/useNetworks'
+import { useTheme } from '@/hooks/useTheme'
 import { ActiveNodeInfoCard } from './ActiveNodeCard'
 import { BlockDetailPanel } from './BlockDetailPanel'
 import { BlockTreeNode } from './BlockTreeNode'
@@ -65,6 +66,7 @@ function MetricsDivider() {
 
 function App() {
   const { networks, loading: networksLoading, error: networksError } = useNetworks()
+  const { preference: themePreference, cycle: cycleTheme } = useTheme()
   const [selectedNetworkId, setSelectedNetworkId] = useState<number | null>(getNetworkIdFromUrl)
   const [selectedBlockId, setSelectedBlockId] = useState<number | null>(null)
   const [isNodePanelCollapsed, setIsNodePanelCollapsed] = useState(false)
@@ -209,7 +211,7 @@ function App() {
 
               <div className="flex shrink-0 items-center gap-2">
                 <NetworkSelector networks={networks} selectedId={selectedNetworkId} onChange={handleNetworkChange} />
-                <ThemeToggle />
+                <ThemeToggle preference={themePreference} onToggle={cycleTheme} />
                 <Button asChild variant="ghost" size="icon-sm">
                   <a
                     href={REPO_URL}
@@ -296,6 +298,7 @@ function App() {
               ) : (
                 <ReactFlow
                   className="bg-transparent"
+                  colorMode={themePreference}
                   nodes={nodes}
                   edges={edges}
                   nodeTypes={nodeTypes}
