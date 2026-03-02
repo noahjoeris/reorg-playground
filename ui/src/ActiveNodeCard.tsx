@@ -17,6 +17,7 @@ import { shortHash } from './utils'
 const RELATIVE_TIME_REFRESH_MS = 10_000
 const panelGlassClass =
   '[background:var(--surface-panel)] border border-border/70 shadow-[var(--elevation-soft)] backdrop-blur-[10px]'
+const P2P_RECONNECT_TOOLTIP = 'Reconnection can take ~30 seconds'
 
 function relativeTime(timestamp: number): string {
   const now = Math.floor(Date.now() / 1000)
@@ -203,16 +204,29 @@ export function ActiveNodeInfoCard({ network, nodes }: { network: Network; nodes
 
                 {supportsNodeP2PControl && (
                   <div className="space-y-1">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="xs"
-                      className="w-full rounded-full"
-                      onClick={() => void toggleNodeP2PConnection(node)}
-                      disabled={p2pConnectionLoading}
-                    >
-                      {p2pConnectionLoading ? 'Updating...' : isP2PConnectionActive ? 'Disable P2P' : 'Enable P2P'}
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="block w-full">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="xs"
+                            className="w-full rounded-full"
+                            onClick={() => void toggleNodeP2PConnection(node)}
+                            disabled={p2pConnectionLoading}
+                          >
+                            {p2pConnectionLoading
+                              ? 'Updating...'
+                              : isP2PConnectionActive
+                                ? 'Disable P2P'
+                                : 'Enable P2P'}
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-64 text-xs leading-relaxed">
+                        {P2P_RECONNECT_TOOLTIP}
+                      </TooltipContent>
+                    </Tooltip>
                     {p2pConnectionError && <p className="text-[10px] text-destructive">{p2pConnectionError}</p>}
                   </div>
                 )}
