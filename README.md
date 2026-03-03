@@ -34,7 +34,7 @@ Inspired by [Fork Observer](https://github.com/0xb10c/fork-observer), but redesi
 
 3. Copy the config template and change the values to your needs. `cp config.toml.example config.toml`
 
-4. Start the backend server with `cargo run`
+4. Start the backend server with `cargo run --release`
 
 5. Start the frontend with `cd ui && pnpm i && pnpm dev`
 
