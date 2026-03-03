@@ -20,9 +20,10 @@ export function MineBlockButton({
   label = 'Mine Block',
   buttonClassName,
 }: MineBlockButtonProps) {
-  const activeEntry = block.tipStatuses.find(ts => ts.status === 'active')
-  const activeNodeNames = new Set(activeEntry?.nodeNames ?? [])
-  const candidateActiveNodes = nodes.filter(n => activeNodeNames.has(n.name))
+  const activeTip = block.tipStatuses.find(tipStatus => tipStatus.status === 'active')
+  const activeTipNodeNames = new Set(activeTip?.nodeNames ?? [])
+  // Mining should only target nodes that currently consider this block their active tip.
+  const activeTipNodes = nodes.filter(node => activeTipNodeNames.has(node.name))
 
   const {
     mine,
@@ -30,14 +31,14 @@ export function MineBlockButton({
     error,
     featureEnabled: miningControlFeatureEnabled,
     isEnabledByNodeId: miningIsEnabledByNodeId,
-  } = useMineBlock(network, candidateActiveNodes)
+  } = useMineBlock(network, activeTipNodes)
   const [dialogOpen, setDialogOpen] = useState(false)
 
-  if (!activeEntry) return null
+  if (!activeTip) return null
 
-  const enabledNodes = candidateActiveNodes.filter(node => miningIsEnabledByNodeId[node.id] ?? false)
+  const mineEnabledNodes = activeTipNodes.filter(node => miningIsEnabledByNodeId[node.id] ?? false)
 
-  if (enabledNodes.length === 0) return null
+  if (mineEnabledNodes.length === 0) return null
 
   const handleMine = async (node: NodeInfo) => {
     await mine(node)
@@ -45,8 +46,8 @@ export function MineBlockButton({
   }
 
   const handleClick = () => {
-    if (enabledNodes.length === 1) {
-      handleMine(enabledNodes[0])
+    if (mineEnabledNodes.length === 1) {
+      void handleMine(mineEnabledNodes[0])
     } else {
       setDialogOpen(true)
     }
@@ -79,7 +80,7 @@ export function MineBlockButton({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 pt-2">
-            {enabledNodes.map(node => (
+            {mineEnabledNodes.map(node => (
               <Button
                 key={node.id}
                 variant="outline"

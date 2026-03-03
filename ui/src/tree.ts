@@ -252,155 +252,229 @@ function computeFoldSegments(
 
 export type FlowNodeType = BlockTreeNodeType | MineTreeNodeType | FoldedBlockTreeNodeType
 
-export function buildReactFlowGraph(
-  blocks: ProcessedBlock[],
-  onBlockClick: (block: ProcessedBlock) => void,
-  selectedBlockId: number | null = null,
-  network: Network | null = null,
-  allNodes: NodeInfo[] = [],
-  globalCollapsed: boolean = false,
-): { nodes: FlowNodeType[]; edges: Edge[]; foldMeta: FoldMetadata } {
+type SlotBounds = { min: number; max: number }
+type ColumnDescriptor =
+  | { sortKey: number; kind: 'height'; height: number }
+  | { sortKey: number; kind: 'fold'; segmentId: string }
+type DepthLookup = {
+  heightToDepth: Map<number, number>
+  foldToDepth: Map<string, number>
+}
+type MineGraphElements = {
+  mineNodes: MineTreeNodeType[]
+  mineEdges: Edge[]
+}
+
+function buildBlockMap(blocks: ProcessedBlock[]): Map<number, ProcessedBlock> {
   const blockMap = new Map<number, ProcessedBlock>()
   for (const block of blocks) {
     blockMap.set(block.id, block)
   }
+  return blockMap
+}
 
-  const childrenMap = new Map<number, number[]>()
+function buildChildrenMap(
+  blocks: ProcessedBlock[],
+  blockMap: ReadonlyMap<number, ProcessedBlock>,
+): Map<number, number[]> {
+  const childrenByParentId = new Map<number, number[]>()
+
   for (const block of blocks) {
     if (block.prev_id === MAX_PREV_ID || !blockMap.has(block.prev_id)) continue
-
-    if (!childrenMap.has(block.prev_id)) {
-      childrenMap.set(block.prev_id, [])
+    const existingChildren = childrenByParentId.get(block.prev_id)
+    if (existingChildren) {
+      existingChildren.push(block.id)
+    } else {
+      childrenByParentId.set(block.prev_id, [block.id])
     }
-
-    childrenMap.get(block.prev_id)?.push(block.id)
   }
 
-  for (const childIds of childrenMap.values()) {
-    childIds.sort((idA, idB) => {
-      const blockA = blockMap.get(idA)
-      const blockB = blockMap.get(idB)
-      if (!blockA || !blockB) return 0
-      return compareBlocks(blockA, blockB)
+  for (const childIds of childrenByParentId.values()) {
+    childIds.sort((leftId, rightId) => {
+      const leftBlock = blockMap.get(leftId)
+      const rightBlock = blockMap.get(rightId)
+      if (!leftBlock || !rightBlock) return 0
+      return compareBlocks(leftBlock, rightBlock)
     })
   }
 
-  // ── Slot assignment (uses full tree, unaffected by folding) ──────────
+  return childrenByParentId
+}
 
-  let leafCursor = 0
+function getRootBlocks(blocks: ProcessedBlock[], blockMap: ReadonlyMap<number, ProcessedBlock>): ProcessedBlock[] {
+  return blocks.filter(block => block.prev_id === MAX_PREV_ID || !blockMap.has(block.prev_id)).sort(compareBlocks)
+}
+
+/**
+ * Assigns deterministic vertical slots for each block in the full tree.
+ * Leaves receive monotonically increasing integer slots; internal nodes are
+ * centered between their children's min and max slots.
+ */
+function createSlotLayout(
+  blocks: ProcessedBlock[],
+  blockMap: ReadonlyMap<number, ProcessedBlock>,
+  childrenMap: ReadonlyMap<number, number[]>,
+): Map<number, number> {
+  let nextLeafSlot = 0
+  const slotByBlockId = new Map<number, number>()
   const visiting = new Set<number>()
-  const slotById = new Map<number, number>()
 
   function assignSlot(blockId: number): number {
-    const existingSlot = slotById.get(blockId)
+    const existingSlot = slotByBlockId.get(blockId)
     if (existingSlot !== undefined) return existingSlot
 
     if (visiting.has(blockId)) {
-      const fallbackSlot = leafCursor++
-      slotById.set(blockId, fallbackSlot)
+      const fallbackSlot = nextLeafSlot++
+      slotByBlockId.set(blockId, fallbackSlot)
       return fallbackSlot
     }
 
     const block = blockMap.get(blockId)
     if (!block) {
-      const fallbackSlot = leafCursor++
-      slotById.set(blockId, fallbackSlot)
+      const fallbackSlot = nextLeafSlot++
+      slotByBlockId.set(blockId, fallbackSlot)
       return fallbackSlot
     }
 
     visiting.add(blockId)
+    const childIds = (childrenMap.get(blockId) ?? []).filter(childId => blockMap.has(childId))
 
-    const children = (childrenMap.get(blockId) ?? []).filter(childId => blockMap.has(childId))
-    if (children.length === 0) {
-      const slot = leafCursor++
-      slotById.set(blockId, slot)
+    if (childIds.length === 0) {
+      const leafSlot = nextLeafSlot++
+      slotByBlockId.set(blockId, leafSlot)
       visiting.delete(blockId)
-      return slot
+      return leafSlot
     }
 
-    const childSlots = children.map(assignSlot)
+    const childSlots = childIds.map(assignSlot)
     const minChildSlot = Math.min(...childSlots)
     const maxChildSlot = Math.max(...childSlots)
-    const slot = (minChildSlot + maxChildSlot) / 2
+    const centeredSlot = (minChildSlot + maxChildSlot) / 2
 
-    slotById.set(blockId, slot)
+    slotByBlockId.set(blockId, centeredSlot)
     visiting.delete(blockId)
-    return slot
+    return centeredSlot
   }
 
-  const roots = blocks
-    .filter(block => block.prev_id === MAX_PREV_ID || !blockMap.has(block.prev_id))
-    .sort(compareBlocks)
-
-  roots.forEach((root, index) => {
-    if (index > 0) {
-      leafCursor += 1
-    }
-    assignSlot(root.id)
+  const rootBlocks = getRootBlocks(blocks, blockMap)
+  rootBlocks.forEach((rootBlock, index) => {
+    if (index > 0) nextLeafSlot += 1
+    assignSlot(rootBlock.id)
   })
 
   for (const block of blocks) {
-    if (slotById.has(block.id)) continue
-    leafCursor += 1
+    if (slotByBlockId.has(block.id)) continue
+    nextLeafSlot += 1
     assignSlot(block.id)
   }
 
-  // ── Fold computation ─────────────────────────────────────────────────
+  return slotByBlockId
+}
 
-  const foldSegments = computeFoldSegments(blocks, blockMap, childrenMap)
-  const collapsedSegments = globalCollapsed ? foldSegments : []
+/**
+ * Builds a resolver for the slot where a newly mined child block should appear.
+ * When a tip has no children, mining extends on the same slot.
+ * When a tip already has children, mining creates a fork sibling and is placed
+ * below the deepest existing child subtree to avoid overlap.
+ */
+function createNextMineSlotResolver(
+  slotById: ReadonlyMap<number, number>,
+  childrenMap: ReadonlyMap<number, number[]>,
+  blockMap: ReadonlyMap<number, ProcessedBlock>,
+) {
+  const subtreeBoundsByBlockId = new Map<number, SlotBounds>()
+  const resolvingSubtree = new Set<number>()
 
-  const hiddenBlockIds = new Set<number>()
-  for (const seg of collapsedSegments) {
-    for (const id of seg.blockIds) hiddenBlockIds.add(id)
+  function getSubtreeBounds(blockId: number): SlotBounds {
+    const cachedBounds = subtreeBoundsByBlockId.get(blockId)
+    if (cachedBounds) return cachedBounds
+
+    const ownSlot = slotById.get(blockId) ?? 0
+    if (resolvingSubtree.has(blockId)) {
+      return { min: ownSlot, max: ownSlot }
+    }
+
+    resolvingSubtree.add(blockId)
+
+    let minSlot = ownSlot
+    let maxSlot = ownSlot
+    for (const childId of childrenMap.get(blockId) ?? []) {
+      if (!blockMap.has(childId)) continue
+      const childBounds = getSubtreeBounds(childId)
+      if (childBounds.min < minSlot) minSlot = childBounds.min
+      if (childBounds.max > maxSlot) maxSlot = childBounds.max
+    }
+
+    resolvingSubtree.delete(blockId)
+    const bounds = { min: minSlot, max: maxSlot }
+    subtreeBoundsByBlockId.set(blockId, bounds)
+    return bounds
   }
 
-  const visibleBlocks = blocks.filter(b => !hiddenBlockIds.has(b.id))
+  return (blockId: number): number => {
+    const parentSlot = slotById.get(blockId) ?? 0
+    const existingChildIds = (childrenMap.get(blockId) ?? []).filter(childId => blockMap.has(childId))
+    if (existingChildIds.length === 0) return parentSlot
 
-  // ── Compressed depth mapping ─────────────────────────────────────────
-  // Build ordered column list from visible heights + fold placeholders.
+    const maxChildSubtreeSlot = Math.max(...existingChildIds.map(childId => getSubtreeBounds(childId).max))
+    return Number.isFinite(maxChildSubtreeSlot) ? maxChildSubtreeSlot + 1 : parentSlot
+  }
+}
 
-  type Column =
-    | { sortKey: number; kind: 'height'; height: number }
-    | { sortKey: number; kind: 'fold'; segmentId: string }
+function createHiddenBlockIdSet(segments: FoldSegment[]): Set<number> {
+  const hiddenBlockIds = new Set<number>()
+  for (const segment of segments) {
+    for (const blockId of segment.blockIds) hiddenBlockIds.add(blockId)
+  }
+  return hiddenBlockIds
+}
 
-  const visibleHeightSet = new Set(visibleBlocks.map(b => b.height))
-  const columns: Column[] = [...visibleHeightSet]
-    .sort((a, b) => a - b)
-    .map(h => ({ sortKey: h, kind: 'height' as const, height: h }))
+/**
+ * Maps heights and folded segments to compressed horizontal column indices.
+ */
+function createDepthLookup(visibleBlocks: ProcessedBlock[], collapsedSegments: FoldSegment[]): DepthLookup {
+  const visibleHeights = [...new Set(visibleBlocks.map(block => block.height))].sort((a, b) => a - b)
+  const columns: ColumnDescriptor[] = visibleHeights.map(height => ({ sortKey: height, kind: 'height', height }))
 
   if (collapsedSegments.length > 0) {
-    for (const seg of collapsedSegments) {
+    for (const segment of collapsedSegments) {
       columns.push({
-        sortKey: seg.startHeight,
-        kind: 'fold' as const,
-        segmentId: seg.id,
+        sortKey: segment.startHeight,
+        kind: 'fold',
+        segmentId: segment.id,
       })
     }
-    columns.sort((a, b) => a.sortKey - b.sortKey)
+    columns.sort((left, right) => left.sortKey - right.sortKey)
   }
 
   const heightToDepth = new Map<number, number>()
   const foldToDepth = new Map<string, number>()
 
-  for (let i = 0; i < columns.length; i++) {
-    const col = columns[i]
-    if (col.kind === 'height') {
-      heightToDepth.set(col.height, i)
+  for (const [depth, column] of columns.entries()) {
+    if (column.kind === 'height') {
+      heightToDepth.set(column.height, depth)
     } else {
-      foldToDepth.set(col.segmentId, i)
+      foldToDepth.set(column.segmentId, depth)
     }
   }
 
-  // ── Block nodes ──────────────────────────────────────────────────────
+  return { heightToDepth, foldToDepth }
+}
 
-  const blockNodes: BlockTreeNodeType[] = visibleBlocks.map(block => {
+function buildBlockNodes(
+  visibleBlocks: ProcessedBlock[],
+  heightToDepth: ReadonlyMap<number, number>,
+  slotByBlockId: ReadonlyMap<number, number>,
+  selectedBlockId: number | null,
+  onBlockClick: (block: ProcessedBlock) => void,
+): BlockTreeNodeType[] {
+  return visibleBlocks.map(block => {
     const depth = heightToDepth.get(block.height) ?? 0
-    const slot = slotById.get(block.id) ?? 0
+    const slot = slotByBlockId.get(block.id) ?? 0
 
     return {
       id: String(block.id),
-      type: 'block' as const,
+      type: 'block',
       position: { x: depth * H_GAP, y: slot * V_GAP },
       width: 240,
       height: BLOCK_NODE_HEIGHT,
@@ -414,44 +488,51 @@ export function buildReactFlowGraph(
       },
     }
   })
+}
 
-  // ── Folded nodes (vertically centered relative to block nodes) ───────
-
+function buildFoldedNodes(
+  collapsedSegments: FoldSegment[],
+  foldToDepth: ReadonlyMap<string, number>,
+  slotByBlockId: ReadonlyMap<number, number>,
+): FoldedBlockTreeNodeType[] {
   const foldedYOffset = (BLOCK_NODE_HEIGHT - FOLDED_NODE_HEIGHT) / 2
 
-  const foldedNodes: FoldedBlockTreeNodeType[] = collapsedSegments.map(seg => {
-    const depth = foldToDepth.get(seg.id) ?? 0
-    const slot = slotById.get(seg.blockIds[0]) ?? 0
+  return collapsedSegments.map(segment => {
+    const depth = foldToDepth.get(segment.id) ?? 0
+    const slot = slotByBlockId.get(segment.blockIds[0]) ?? 0
 
     return {
-      id: `fold-${seg.id}`,
-      type: 'folded' as const,
+      id: `fold-${segment.id}`,
+      type: 'folded',
       selectable: false,
       position: { x: depth * H_GAP, y: slot * V_GAP + foldedYOffset },
       width: 192,
       height: FOLDED_NODE_HEIGHT,
       data: {
-        startHeight: seg.startHeight,
-        endHeight: seg.endHeight,
-        hiddenCount: seg.hiddenCount,
+        startHeight: segment.startHeight,
+        endHeight: segment.endHeight,
+        hiddenCount: segment.hiddenCount,
       },
     }
   })
+}
 
-  // ── Edges ────────────────────────────────────────────────────────────
+function buildVisibleBlockEdges(
+  visibleBlocks: ProcessedBlock[],
+  blockMap: ReadonlyMap<number, ProcessedBlock>,
+  hiddenBlockIds: ReadonlySet<number>,
+  selectedBlockId: number | null,
+): Edge[] {
+  const edges: Edge[] = []
 
-  const blockEdges: Edge[] = []
-
-  // Regular edges between visible blocks
   for (const block of visibleBlocks) {
     if (block.prev_id === MAX_PREV_ID || !blockMap.has(block.prev_id)) continue
-    // Skip if parent is hidden (edge handled by fold boundary edges)
     if (hiddenBlockIds.has(block.prev_id)) continue
 
     const highlightsSelected =
       selectedBlockId !== null && (selectedBlockId === block.id || selectedBlockId === block.prev_id)
 
-    blockEdges.push({
+    edges.push({
       id: `${block.prev_id}-${block.id}`,
       source: String(block.prev_id),
       target: String(block.id),
@@ -464,14 +545,19 @@ export function buildReactFlowGraph(
     })
   }
 
-  // Fold boundary edges (predecessor → fold → successor)
-  for (const seg of collapsedSegments) {
-    const foldNodeId = `fold-${seg.id}`
+  return edges
+}
 
-    if (seg.predecessorBlockId !== null) {
-      blockEdges.push({
-        id: `${seg.predecessorBlockId}-${foldNodeId}`,
-        source: String(seg.predecessorBlockId),
+function buildFoldBoundaryEdges(collapsedSegments: FoldSegment[]): Edge[] {
+  const edges: Edge[] = []
+
+  for (const segment of collapsedSegments) {
+    const foldNodeId = `fold-${segment.id}`
+
+    if (segment.predecessorBlockId !== null) {
+      edges.push({
+        id: `${segment.predecessorBlockId}-${foldNodeId}`,
+        source: String(segment.predecessorBlockId),
         target: foldNodeId,
         type: 'smoothstep',
         markerEnd: { type: MarkerType.ArrowClosed },
@@ -483,11 +569,11 @@ export function buildReactFlowGraph(
       })
     }
 
-    if (seg.successorBlockId !== null) {
-      blockEdges.push({
-        id: `${foldNodeId}-${seg.successorBlockId}`,
+    if (segment.successorBlockId !== null) {
+      edges.push({
+        id: `${foldNodeId}-${segment.successorBlockId}`,
         source: foldNodeId,
-        target: String(seg.successorBlockId),
+        target: String(segment.successorBlockId),
         type: 'smoothstep',
         markerEnd: { type: MarkerType.ArrowClosed },
         style: {
@@ -499,55 +585,102 @@ export function buildReactFlowGraph(
     }
   }
 
-  // ── Mine nodes (only for visible real blocks) ────────────────────────
+  return edges
+}
 
+function hasMineableActiveTip(block: ProcessedBlock, allNodes: NodeInfo[]): boolean {
+  const activeTip = block.tipStatuses.find(tipStatus => tipStatus.status === 'active')
+  if (!activeTip) return false
+
+  const activeTipNodeNames = new Set(activeTip.nodeNames)
+  return allNodes.some(node => node.implementation === 'Bitcoin Core' && activeTipNodeNames.has(node.name))
+}
+
+function buildMineGraphElements(
+  visibleBlocks: ProcessedBlock[],
+  network: Network | null,
+  allNodes: NodeInfo[],
+  selectedBlockId: number | null,
+  heightToDepth: ReadonlyMap<number, number>,
+  resolveNextMineSlot: (blockId: number) => number,
+): MineGraphElements {
   const mineNodes: MineTreeNodeType[] = []
   const mineEdges: Edge[] = []
 
-  if (network && isRegtestOrSignet(network)) {
-    for (const block of visibleBlocks) {
-      const activeEntry = block.tipStatuses.find(tipStatus => tipStatus.status === 'active')
-      if (!activeEntry) continue
-
-      const activeNodeNames = new Set(activeEntry.nodeNames)
-      const hasMineableNode = allNodes.some(
-        node => node.implementation === 'Bitcoin Core' && activeNodeNames.has(node.name),
-      )
-      if (!hasMineableNode) continue
-
-      const depth = heightToDepth.get(block.height) ?? 0
-      const slot = slotById.get(block.id) ?? 0
-      const mineNodeId = `mine-${block.id}`
-      const highlightsSelected = selectedBlockId !== null && selectedBlockId === block.id
-
-      mineNodes.push({
-        id: mineNodeId,
-        type: 'mine',
-        position: { x: (depth + 1) * H_GAP, y: slot * V_GAP },
-        width: 100,
-        height: BLOCK_NODE_HEIGHT,
-        selected: highlightsSelected,
-        data: {
-          block,
-          network,
-          nodes: allNodes,
-        },
-      })
-
-      mineEdges.push({
-        id: `${block.id}-${mineNodeId}`,
-        source: String(block.id),
-        target: mineNodeId,
-        type: 'smoothstep',
-        markerEnd: { type: MarkerType.ArrowClosed },
-        style: {
-          stroke: 'var(--accent)',
-          strokeWidth: highlightsSelected ? 2 : 1.5,
-          strokeDasharray: '5 4',
-        },
-      })
-    }
+  if (!network || !isRegtestOrSignet(network)) {
+    return { mineNodes, mineEdges }
   }
+
+  for (const block of visibleBlocks) {
+    if (!hasMineableActiveTip(block, allNodes)) continue
+
+    const depth = heightToDepth.get(block.height) ?? 0
+    const mineSlot = resolveNextMineSlot(block.id)
+    const mineNodeId = `mine-${block.id}`
+    const highlightsSelected = selectedBlockId !== null && selectedBlockId === block.id
+
+    mineNodes.push({
+      id: mineNodeId,
+      type: 'mine',
+      position: { x: (depth + 1) * H_GAP, y: mineSlot * V_GAP },
+      width: 100,
+      height: BLOCK_NODE_HEIGHT,
+      selected: highlightsSelected,
+      data: {
+        block,
+        network,
+        nodes: allNodes,
+      },
+    })
+
+    mineEdges.push({
+      id: `${block.id}-${mineNodeId}`,
+      source: String(block.id),
+      target: mineNodeId,
+      type: 'smoothstep',
+      markerEnd: { type: MarkerType.ArrowClosed },
+      style: {
+        stroke: 'var(--accent)',
+        strokeWidth: highlightsSelected ? 2 : 1.5,
+        strokeDasharray: '5 4',
+      },
+    })
+  }
+
+  return { mineNodes, mineEdges }
+}
+
+export function buildReactFlowGraph(
+  blocks: ProcessedBlock[],
+  onBlockClick: (block: ProcessedBlock) => void,
+  selectedBlockId: number | null = null,
+  network: Network | null = null,
+  allNodes: NodeInfo[] = [],
+  globalCollapsed: boolean = false,
+): { nodes: FlowNodeType[]; edges: Edge[]; foldMeta: FoldMetadata } {
+  const blockMap = buildBlockMap(blocks)
+  const childrenMap = buildChildrenMap(blocks, blockMap)
+  const slotByBlockId = createSlotLayout(blocks, blockMap, childrenMap)
+  const resolveNextMineSlot = createNextMineSlotResolver(slotByBlockId, childrenMap, blockMap)
+  const foldSegments = computeFoldSegments(blocks, blockMap, childrenMap)
+  const collapsedSegments = globalCollapsed ? foldSegments : []
+  const hiddenBlockIds = createHiddenBlockIdSet(collapsedSegments)
+  const visibleBlocks = blocks.filter(block => !hiddenBlockIds.has(block.id))
+  const { heightToDepth, foldToDepth } = createDepthLookup(visibleBlocks, collapsedSegments)
+  const blockNodes = buildBlockNodes(visibleBlocks, heightToDepth, slotByBlockId, selectedBlockId, onBlockClick)
+  const foldedNodes = buildFoldedNodes(collapsedSegments, foldToDepth, slotByBlockId)
+  const blockEdges = [
+    ...buildVisibleBlockEdges(visibleBlocks, blockMap, hiddenBlockIds, selectedBlockId),
+    ...buildFoldBoundaryEdges(collapsedSegments),
+  ]
+  const { mineNodes, mineEdges } = buildMineGraphElements(
+    visibleBlocks,
+    network,
+    allNodes,
+    selectedBlockId,
+    heightToDepth,
+    resolveNextMineSlot,
+  )
 
   return {
     nodes: [...blockNodes, ...foldedNodes, ...mineNodes],
