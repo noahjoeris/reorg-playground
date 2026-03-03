@@ -42,6 +42,15 @@ Inspired by [Fork Observer](https://github.com/0xb10c/fork-observer), but redesi
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+## Quickstart Docker
+
+1. Start the stack: `docker compose up -d --build`
+2. Open the app: `http://localhost`
+
+Note: SQLite data is persisted in the Docker volume `app_db`.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ## Supported node backends
 - Bitcoin Core
   - uses `getchaintips` RPC to fetch active and stale block tips

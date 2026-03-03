@@ -1,0 +1,27 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
+    environment:
+      CONFIG_FILE: /app/config/config.toml
+      RUST_LOG: info
+    expose:
+      - "2323"
+    volumes:
+      - app_db:/data
+      - ./config.production.toml:/app/config/config.toml:ro
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
+volumes:
+  app_db:

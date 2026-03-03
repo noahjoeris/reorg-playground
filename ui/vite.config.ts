@@ -36,6 +36,10 @@ export default defineConfig({
         target: 'http://localhost:2323',
         changeOrigin: true,
       },
+      '/rss': {
+        target: 'http://localhost:2323',
+        changeOrigin: true,
+      },
     },
   },
 })

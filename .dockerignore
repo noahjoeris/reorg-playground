@@ -1,0 +1,12 @@
+.git
+.gitignore
+.vscode
+.claude
+.pnpm-store
+
+target
+dbfile
+config.toml
+
+ui/node_modules
+ui/dist

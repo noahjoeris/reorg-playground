@@ -1,0 +1,54 @@
+# reorg-playground production configuration (mainnet/testnet only)
+
+database_path = "/data/reorg.db"
+query_interval = 15
+address = "0.0.0.0:2323"
+rss_base_url = ""
+
+[[networks]]
+id = 0
+name = "Mainnet"
+description = "Bitcoin Mainnet"
+first_tracked_height = 937000
+visible_heights_from_tip = 500
+extra_hotspot_heights = 100
+network_type = "Mainnet"
+
+    [[networks.nodes]]
+    id = 0
+    name = "PublicNode"
+    description = "PublicNode Bitcoin RPC node"
+    rpc_host = "https://bitcoin-rpc.publicnode.com"
+    rpc_port = 443
+    rpc_user = ""
+    rpc_password = ""
+    use_rest = false
+    client_implementation = "bitcoincore"
+
+    [[networks.nodes]]
+    id = 1
+    name = "Electrum Emzy"
+    description = "electrum.emzy.de:50002"
+    rpc_host = "ssl://electrum.emzy.de"
+    rpc_port = 50002
+    client_implementation = "electrum"
+
+[[networks]]
+id = 1
+name = "Testnet"
+description = "Bitcoin Testnet"
+first_tracked_height = 4841135
+visible_heights_from_tip = 500
+extra_hotspot_heights = 100
+network_type = "Testnet"
+
+    [[networks.nodes]]
+    id = 0
+    name = "PublicNode"
+    description = "PublicNode Bitcoin Testnet RPC node"
+    rpc_host = "https://bitcoin-testnet-rpc.publicnode.com"
+    rpc_port = 443
+    rpc_user = ""
+    rpc_password = ""
+    use_rest = false
+    client_implementation = "bitcoincore"

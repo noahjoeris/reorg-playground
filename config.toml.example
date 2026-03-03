@@ -2,7 +2,7 @@
 
 database_path = "dbfile" # Database path of the key value store. Will be created if non-existing.
 query_interval = 15 # Interval in seconds for checking for new blocks
-address = "127.0.0.1:2323" # Webserver listen address
+address = "0.0.0.0:2323" # Webserver listen address
 
 # RSS feeds need a URL of the site. This is optional. If unset,
 # the RSS feeds might not be valid according to the RSS 2.0 specification.
