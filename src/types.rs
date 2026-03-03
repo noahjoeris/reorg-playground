@@ -58,6 +58,7 @@ pub struct NetworkJson {
     pub name: String,
     pub description: String,
     pub network_type: NetworkType,
+    pub disable_node_controls: bool,
 }
 
 impl NetworkJson {
@@ -67,6 +68,7 @@ impl NetworkJson {
             name: network.name.clone(),
             description: network.description.clone(),
             network_type: network.network_type.clone(),
+            disable_node_controls: network.disable_node_controls,
         }
     }
 }

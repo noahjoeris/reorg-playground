@@ -63,6 +63,8 @@ struct TomlNetwork {
     visible_heights_from_tip: usize,
     extra_hotspot_heights: usize,
     network_type: NetworkType,
+    #[serde(default)]
+    disable_node_controls: bool,
     nodes: Vec<TomlNode>,
 }
 
@@ -75,6 +77,7 @@ pub struct Network {
     pub visible_heights_from_tip: usize,
     pub extra_hotspot_heights: usize,
     pub network_type: NetworkType,
+    pub disable_node_controls: bool,
     pub nodes: Vec<Arc<dyn Node>>,
 }
 
@@ -82,13 +85,14 @@ impl fmt::Display for TomlNetwork {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Network (id={}, description='{}', name='{}', first_tracked_height={}, visible_heights_from_tip={}, extra_hotspot_heights={}, nodes={:?})",
+            "Network (id={}, description='{}', name='{}', first_tracked_height={}, visible_heights_from_tip={}, extra_hotspot_heights={}, disable_node_controls={}, nodes={:?})",
             self.id,
             self.description,
             self.name,
             self.first_tracked_height,
             self.visible_heights_from_tip,
             self.extra_hotspot_heights,
+            self.disable_node_controls,
             self.nodes,
         )
     }
@@ -267,6 +271,7 @@ fn parse_toml_network(
         visible_heights_from_tip: toml_network.visible_heights_from_tip,
         extra_hotspot_heights: toml_network.extra_hotspot_heights,
         network_type: toml_network.network_type.clone(),
+        disable_node_controls: toml_network.disable_node_controls,
         nodes,
     })
 }
@@ -553,9 +558,47 @@ mod tests {
                 let network = &config.networks[0];
                 assert_eq!(network.visible_heights_from_tip, 222);
                 assert_eq!(network.extra_hotspot_heights, 33);
+                assert!(!network.disable_node_controls);
             }
             Err(e) => {
                 panic!("new height fields should parse: {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn parses_disable_node_controls_flag() {
+        match parse_config(
+            r#"
+            database_path = ""
+            query_interval = 15
+            address = "127.0.0.1:2323"
+            rss_base_url = ""
+
+            [[networks]]
+            id = 8
+            name = "example"
+            description = ""
+            first_tracked_height = 0
+            visible_heights_from_tip = 10
+            extra_hotspot_heights = 2
+            network_type = "Regtest"
+            disable_node_controls = true
+
+                [[networks.nodes]]
+                id = 1
+                name = "Esplora Node"
+                description = "test"
+                rpc_host = "https://esplora.example.org/api"
+                client_implementation = "esplora"
+        "#,
+        ) {
+            Ok(config) => {
+                let network = &config.networks[0];
+                assert!(network.disable_node_controls);
+            }
+            Err(e) => {
+                panic!("disable_node_controls=true should parse: {}", e);
             }
         }
     }

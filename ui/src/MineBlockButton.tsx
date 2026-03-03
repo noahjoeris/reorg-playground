@@ -29,7 +29,7 @@ export function MineBlockButton({
     mine,
     loading,
     error,
-    featureEnabled: miningControlFeatureEnabled,
+    isFeatureEnabled: miningControlFeatureEnabled,
     isEnabledByNodeId: miningIsEnabledByNodeId,
   } = useMineBlock(network, activeTipNodes)
   const [dialogOpen, setDialogOpen] = useState(false)

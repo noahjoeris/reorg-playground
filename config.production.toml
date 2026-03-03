@@ -13,6 +13,7 @@ first_tracked_height = 937000
 visible_heights_from_tip = 500
 extra_hotspot_heights = 100
 network_type = "Mainnet"
+disable_node_controls = false # Only affects node controls on Regtest/custom Signet.
 
     [[networks.nodes]]
     id = 0
@@ -41,6 +42,7 @@ first_tracked_height = 4841135
 visible_heights_from_tip = 500
 extra_hotspot_heights = 100
 network_type = "Testnet"
+disable_node_controls = false # Only affects node controls on Regtest/custom Signet.
 
     [[networks.nodes]]
     id = 0

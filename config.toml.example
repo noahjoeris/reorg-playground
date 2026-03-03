@@ -18,6 +18,7 @@ first_tracked_height = 937000 # lower bound; loads from this height to tip into 
 visible_heights_from_tip = 500 # Base tip window size (heights counted backward from chain tip).
 extra_hotspot_heights = 100 # Additional hotspot heights (fork/tip anchors) kept outside the base tip window.
 network_type = "Mainnet" # Mainnet | Testnet | Signet | Regtest
+disable_node_controls = false # Only affects node controls on Regtest/custom Signet.
 
     [[networks.nodes]]
     id = 0
@@ -46,6 +47,7 @@ first_tracked_height = 4841135
 visible_heights_from_tip = 500 
 extra_hotspot_heights = 100
 network_type = "Testnet"
+disable_node_controls = false # Only affects node controls on Regtest/custom Signet.
 
     [[networks.nodes]]
     id = 0
@@ -67,6 +69,7 @@ first_tracked_height = 0
 visible_heights_from_tip = 100 
 extra_hotspot_heights = 20 
 network_type = "Regtest"
+disable_node_controls = false # Only affects node controls on Regtest/custom Signet.
 # Note: You can deploy two local regtest nodes via /scripts/start-regtest-pair.sh
 
     [[networks.nodes]]

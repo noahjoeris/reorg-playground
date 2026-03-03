@@ -71,6 +71,7 @@ export type Network = {
   name: string
   description: string
   network_type: NetworkType
+  disable_node_controls: boolean
 }
 
 export type NetworksResponse = {

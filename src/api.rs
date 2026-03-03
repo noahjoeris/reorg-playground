@@ -109,6 +109,15 @@ pub async fn mine_block(
             );
         }
     };
+    if network.disable_node_controls {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(MineBlockResponse {
+                success: false,
+                error: Some("MINE_FEATURE_DISABLED".to_string()),
+            }),
+        );
+    }
 
     let node = match get_node(network, body.node_id) {
         Some(node) => node,
@@ -197,6 +206,15 @@ pub async fn set_network_active(
             );
         }
     };
+    if network.disable_node_controls {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(SetNetworkActiveResponse {
+                success: false,
+                error: Some("NETWORK_CONTROL_FEATURE_DISABLED".to_string()),
+            }),
+        );
+    }
 
     let node = match get_node(network, body.node_id) {
         Some(node) => node,
@@ -415,6 +433,7 @@ mod tests {
             visible_heights_from_tip: 0,
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
+            disable_node_controls: false,
             nodes: vec![Arc::new(node)],
         }]
     }
@@ -469,6 +488,7 @@ mod tests {
             visible_heights_from_tip: 0,
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
+            disable_node_controls: false,
             nodes: vec![],
         }]);
 
@@ -485,6 +505,37 @@ mod tests {
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(!body.0.success);
         assert_eq!(body.0.error.as_deref(), Some("MINE_BACKEND_UNSUPPORTED"));
+    }
+
+    #[tokio::test]
+    async fn mine_block_feature_disabled_by_network_config() {
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok);
+        let state = test_state(vec![Network {
+            id: 1,
+            description: "test network".to_string(),
+            name: "test".to_string(),
+            first_tracked_height: 0,
+            visible_heights_from_tip: 0,
+            extra_hotspot_heights: 0,
+            network_type: NetworkType::Regtest,
+            disable_node_controls: true,
+            nodes: vec![Arc::new(node.clone())],
+        }]);
+
+        let (status, body) = mine_block(
+            Path(1),
+            State(state),
+            Json(MineBlockRequest {
+                node_id: 7,
+                count: Some(1),
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(!body.0.success);
+        assert_eq!(body.0.error.as_deref(), Some("MINE_FEATURE_DISABLED"));
+        assert!(node.mine_calls.lock().await.is_empty());
     }
 
     #[tokio::test]
@@ -517,6 +568,7 @@ mod tests {
             visible_heights_from_tip: 0,
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
+            disable_node_controls: false,
             nodes: vec![],
         }]);
 
@@ -536,6 +588,40 @@ mod tests {
             body.0.error.as_deref(),
             Some("NETWORK_CONTROL_BACKEND_UNSUPPORTED")
         );
+    }
+
+    #[tokio::test]
+    async fn set_network_active_feature_disabled_by_network_config() {
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok);
+        let state = test_state(vec![Network {
+            id: 1,
+            description: "test network".to_string(),
+            name: "test".to_string(),
+            first_tracked_height: 0,
+            visible_heights_from_tip: 0,
+            extra_hotspot_heights: 0,
+            network_type: NetworkType::Regtest,
+            disable_node_controls: true,
+            nodes: vec![Arc::new(node.clone())],
+        }]);
+
+        let (status, body) = set_network_active(
+            Path(1),
+            State(state),
+            Json(SetNetworkActiveRequest {
+                node_id: 7,
+                active: false,
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(!body.0.success);
+        assert_eq!(
+            body.0.error.as_deref(),
+            Some("NETWORK_CONTROL_FEATURE_DISABLED")
+        );
+        assert!(node.network_calls.lock().await.is_empty());
     }
 
     #[tokio::test]

@@ -19,7 +19,7 @@ Inspired by [Fork Observer](https://github.com/0xb10c/fork-observer), but redesi
 
 - Interactive block-header graph with forks/tips and collapse/expand behavior for dense sections.
 - Multi-backend node observation (Bitcoin Core, Electrum, Esplora, btcd) via RPC/REST.
-- Node controls for Bitcoin Core (mine block, enable/disable P2P).
+- Node controls for Bitcoin Core (mine block, enable/disable P2P), configurable per network via `disable_node_controls`.
 - Config-driven network/node setup through `config.toml`.
 - Header data collection and persistence in SQLite.
 - Modern, responsive UI for exploring forks and node state.
@@ -67,7 +67,7 @@ Note: SQLite data is persisted in the Docker volume `app_db`.
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Known Limitations
-- Node interactions are currently supported only for Bitcoin Core on Regtest; custom Signet support is planned.
+- Node interactions are currently supported only for Bitcoin Core on Regtest; controls can be disabled per network via `disable_node_controls`.
 - The app currently relies on polling-based updates (push-based improvements are planned).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>

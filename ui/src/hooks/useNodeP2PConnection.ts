@@ -16,15 +16,15 @@ export function useNodeP2PConnection(network: Network | null, nodes: NodeInfo[] 
   const [loadingByNodeId, setLoadingByNodeId] = useState<LoadingByNodeId>({})
   const [errorByNodeId, setErrorByNodeId] = useState<ErrorByNodeId>({})
   const [p2pConnectionActiveByNodeId, setP2PConnectionActiveByNodeId] = useState<P2PConnectionActiveByNodeId>({})
-  const networkControlFunctionalityEnabled = isRegtestOrSignet(network)
+  const nodeControlsEnabled = isRegtestOrSignet(network) && !network?.disable_node_controls
   const isEnabledByNodeId = useMemo(() => {
     const map: IsEnabledByNodeId = {}
     for (const node of nodes) {
-      map[node.id] = networkControlFunctionalityEnabled && supportsNodeP2PControl(node)
+      map[node.id] = nodeControlsEnabled && supportsNodeP2PControl(node)
     }
     return map
-  }, [nodes, networkControlFunctionalityEnabled])
-  const featureEnabled = Object.values(isEnabledByNodeId).some(Boolean)
+  }, [nodes, nodeControlsEnabled])
+  const isFeatureEnabled = Object.values(isEnabledByNodeId).some(Boolean)
 
   useEffect(() => {
     setLoadingByNodeId({})
@@ -47,7 +47,7 @@ export function useNodeP2PConnection(network: Network | null, nodes: NodeInfo[] 
         return false
       }
       if (!(isEnabledByNodeId[nodeId] ?? false)) {
-        setErrorByNodeId(current => ({ ...current, [nodeId]: 'P2P control is only enabled on Regtest or Signet' }))
+        setErrorByNodeId(current => ({ ...current, [nodeId]: 'P2P control is disabled for this network' }))
         return false
       }
 
@@ -98,6 +98,6 @@ export function useNodeP2PConnection(network: Network | null, nodes: NodeInfo[] 
     loadingByNodeId,
     errorByNodeId,
     clearError,
-    featureEnabled,
+    isFeatureEnabled,
   }
 }

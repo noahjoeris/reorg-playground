@@ -13,15 +13,15 @@ function supportsNodeMining(node: Pick<NodeInfo, 'implementation'>): boolean {
 export function useMineBlock(network: Network | null, nodes: MineControlNode[] = []) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const miningControlFunctionalityEnabled = isRegtestOrSignet(network)
+  const nodeControlsEnabled = isRegtestOrSignet(network) && !network?.disable_node_controls
   const isEnabledByNodeId = useMemo(() => {
     const map: IsEnabledByNodeId = {}
     for (const node of nodes) {
-      map[node.id] = miningControlFunctionalityEnabled && supportsNodeMining(node)
+      map[node.id] = nodeControlsEnabled && supportsNodeMining(node)
     }
     return map
-  }, [nodes, miningControlFunctionalityEnabled])
-  const featureEnabled = Object.values(isEnabledByNodeId).some(Boolean)
+  }, [nodes, nodeControlsEnabled])
+  const isFeatureEnabled = Object.values(isEnabledByNodeId).some(Boolean)
 
   const mine = useCallback(
     async (node: MineControlNode, count?: number) => {
@@ -30,7 +30,7 @@ export function useMineBlock(network: Network | null, nodes: MineControlNode[] =
         return
       }
       if (!(isEnabledByNodeId[node.id] ?? false)) {
-        setError('Mining control is only enabled on Regtest or Signet')
+        setError('Mining control is disabled for this network')
         return
       }
 
@@ -52,5 +52,5 @@ export function useMineBlock(network: Network | null, nodes: MineControlNode[] =
 
   const clearError = useCallback(() => setError(null), [])
 
-  return { mine, loading, error, clearError, featureEnabled, isEnabledByNodeId }
+  return { mine, loading, error, clearError, isFeatureEnabled, isEnabledByNodeId }
 }

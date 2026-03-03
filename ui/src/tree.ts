@@ -607,7 +607,7 @@ function buildMineGraphElements(
   const mineNodes: MineTreeNodeType[] = []
   const mineEdges: Edge[] = []
 
-  if (!network || !isRegtestOrSignet(network)) {
+  if (!network || network.disable_node_controls || !isRegtestOrSignet(network)) {
     return { mineNodes, mineEdges }
   }
 
