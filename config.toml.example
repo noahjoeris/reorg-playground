@@ -1,7 +1,6 @@
 # reorg-playground configuration file
 
 database_path = "dbfile" # Database path of the key value store. Will be created if non-existing.
-query_interval = 15 # Interval in seconds for checking for new blocks
 address = "0.0.0.0:2323" # Webserver listen address
 
 # RSS feeds need a URL of the site. This is optional. If unset,
@@ -13,6 +12,7 @@ rss_base_url = ""
 id = 0
 name = "Mainnet"
 description = "Bitcoin Mainnet"
+query_interval = 15
 
 first_tracked_height = 937000 # lower bound; loads from this height to tip into the db
 visible_heights_from_tip = 500 # Base tip window size (heights counted backward from chain tip).
@@ -43,6 +43,7 @@ disable_node_controls = false # Only affects node controls on Regtest/custom Sig
 id = 1
 name = "Testnet"
 description = "Bitcoin Testnet"
+query_interval = 15
 first_tracked_height = 4841135 
 visible_heights_from_tip = 500 
 extra_hotspot_heights = 100
@@ -65,12 +66,13 @@ disable_node_controls = false # Only affects node controls on Regtest/custom Sig
 id = 2
 name = "Regtest"
 description = "Bitcoin Regtest (local dev)"
+query_interval = 1
 first_tracked_height = 0 
 visible_heights_from_tip = 100 
 extra_hotspot_heights = 20 
 network_type = "Regtest"
 disable_node_controls = false # Only affects node controls on Regtest/custom Signet.
-# Note: You can deploy two local regtest nodes via /scripts/start-regtest-pair.sh
+# Note: You can deploy two local regtest nodes via /scripts/start-regtest-pair.sh. Or just use the docker compose.
 
     [[networks.nodes]]
     id = 0

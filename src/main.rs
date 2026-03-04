@@ -98,7 +98,6 @@ async fn main() -> Result<(), MainError> {
             &db,
             &caches,
             &cache_changed_tx,
-            config.query_interval,
         );
     }
 
@@ -158,7 +157,6 @@ fn spawn_network_tasks(
     db: &Db,
     caches: &Caches,
     cache_changed_tx: &broadcast::Sender<u32>,
-    query_interval: Duration,
 ) {
     let (miner_id_tx, mut miner_id_rx) = unbounded_channel::<BlockHash>();
 
@@ -171,6 +169,7 @@ fn spawn_network_tasks(
 
     for node in network.nodes.iter().cloned() {
         let network = network.clone();
+        let query_interval = network.query_interval;
         let mut interval = interval_at(
             Instant::now()
                 + Duration::from_millis(

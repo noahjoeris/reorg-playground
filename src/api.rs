@@ -298,6 +298,7 @@ mod tests {
     use bitcoincore_rpc::bitcoin::hashes::Hash;
     use std::collections::BTreeMap;
     use std::sync::Arc;
+    use std::time::Duration;
     use tokio::sync::Mutex;
     use tokio::sync::mpsc::UnboundedSender;
 
@@ -429,6 +430,7 @@ mod tests {
             id: network_id,
             description: "test network".to_string(),
             name: "test".to_string(),
+            query_interval: Duration::from_secs(15),
             first_tracked_height: 0,
             visible_heights_from_tip: 0,
             extra_hotspot_heights: 0,
@@ -484,6 +486,7 @@ mod tests {
             id: 1,
             description: "test network".to_string(),
             name: "test".to_string(),
+            query_interval: Duration::from_secs(15),
             first_tracked_height: 0,
             visible_heights_from_tip: 0,
             extra_hotspot_heights: 0,
@@ -514,6 +517,7 @@ mod tests {
             id: 1,
             description: "test network".to_string(),
             name: "test".to_string(),
+            query_interval: Duration::from_secs(15),
             first_tracked_height: 0,
             visible_heights_from_tip: 0,
             extra_hotspot_heights: 0,
@@ -564,6 +568,7 @@ mod tests {
             id: 1,
             description: "test network".to_string(),
             name: "test".to_string(),
+            query_interval: Duration::from_secs(15),
             first_tracked_height: 0,
             visible_heights_from_tip: 0,
             extra_hotspot_heights: 0,
@@ -597,6 +602,7 @@ mod tests {
             id: 1,
             description: "test network".to_string(),
             name: "test".to_string(),
+            query_interval: Duration::from_secs(15),
             first_tracked_height: 0,
             visible_heights_from_tip: 0,
             extra_hotspot_heights: 0,

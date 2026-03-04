@@ -41,14 +41,12 @@ struct TomlConfig {
     address: String,
     database_path: String,
     rss_base_url: Option<String>,
-    query_interval: u64,
     networks: Vec<TomlNetwork>,
 }
 
 #[derive(Clone)]
 pub struct Config {
     pub database_path: PathBuf,
-    pub query_interval: Duration,
     pub address: SocketAddr,
     pub networks: Vec<Network>,
     pub rss_base_url: String,
@@ -59,6 +57,7 @@ struct TomlNetwork {
     id: u32,
     name: String,
     description: String,
+    query_interval: u64,
     first_tracked_height: u64,
     visible_heights_from_tip: usize,
     extra_hotspot_heights: usize,
@@ -73,6 +72,7 @@ pub struct Network {
     pub id: u32,
     pub description: String,
     pub name: String,
+    pub query_interval: Duration,
     pub first_tracked_height: u64,
     pub visible_heights_from_tip: usize,
     pub extra_hotspot_heights: usize,
@@ -85,10 +85,11 @@ impl fmt::Display for TomlNetwork {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Network (id={}, description='{}', name='{}', first_tracked_height={}, visible_heights_from_tip={}, extra_hotspot_heights={}, disable_node_controls={}, nodes={:?})",
+            "Network (id={}, description='{}', name='{}', query_interval={}, first_tracked_height={}, visible_heights_from_tip={}, extra_hotspot_heights={}, disable_node_controls={}, nodes={:?})",
             self.id,
             self.description,
             self.name,
+            self.query_interval,
             self.first_tracked_height,
             self.visible_heights_from_tip,
             self.extra_hotspot_heights,
@@ -252,7 +253,6 @@ fn parse_config(config_str: &str) -> Result<Config, ConfigError> {
 
     Ok(Config {
         database_path: PathBuf::from(toml_config.database_path),
-        query_interval: Duration::from_secs(toml_config.query_interval),
         address: SocketAddr::from_str(&toml_config.address)?,
         rss_base_url: toml_config.rss_base_url.unwrap_or_default().clone(),
         networks,
@@ -267,6 +267,7 @@ fn parse_toml_network(
         id: toml_network.id,
         name: toml_network.name.clone(),
         description: toml_network.description.clone(),
+        query_interval: Duration::from_secs(toml_network.query_interval),
         first_tracked_height: toml_network.first_tracked_height,
         visible_heights_from_tip: toml_network.visible_heights_from_tip,
         extra_hotspot_heights: toml_network.extra_hotspot_heights,
@@ -356,6 +357,7 @@ mod tests {
             id = 1
             name = ""
             description = ""
+            query_interval = 15
             first_tracked_height = 0
             visible_heights_from_tip = 0
             extra_hotspot_heights = 0
@@ -403,6 +405,7 @@ mod tests {
             id = 1
             name = ""
             description = ""
+            query_interval = 15
             first_tracked_height = 0
             visible_heights_from_tip = 0
             extra_hotspot_heights = 0
@@ -421,6 +424,7 @@ mod tests {
             id = 1
             name = ""
             description = ""
+            query_interval = 15
             first_tracked_height = 0
             visible_heights_from_tip = 0
             extra_hotspot_heights = 0
@@ -458,6 +462,7 @@ mod tests {
             id = 1
             name = ""
             description = ""
+            query_interval = 15
             first_tracked_height = 0
             visible_heights_from_tip = 0
             extra_hotspot_heights = 0
@@ -500,6 +505,7 @@ mod tests {
             id = 1
             name = ""
             description = ""
+            query_interval = 15
             first_tracked_height = 0
             visible_heights_from_tip = 0
             extra_hotspot_heights = 0
@@ -541,6 +547,7 @@ mod tests {
             id = 7
             name = "example"
             description = ""
+            query_interval = 15
             first_tracked_height = 111
             visible_heights_from_tip = 222
             extra_hotspot_heights = 33
@@ -579,6 +586,7 @@ mod tests {
             id = 8
             name = "example"
             description = ""
+            query_interval = 15
             first_tracked_height = 0
             visible_heights_from_tip = 10
             extra_hotspot_heights = 2
@@ -616,6 +624,7 @@ mod tests {
             id = 1
             name = "missing-network-type"
             description = ""
+            query_interval = 15
             first_tracked_height = 0
             visible_heights_from_tip = 10
             extra_hotspot_heights = 2
@@ -650,6 +659,7 @@ mod tests {
             id = 1
             name = "missing-impl"
             description = ""
+            query_interval = 15
             first_tracked_height = 0
             visible_heights_from_tip = 10
             extra_hotspot_heights = 2
@@ -687,6 +697,7 @@ mod tests {
             id = 1
             name = "controls"
             description = ""
+            query_interval = 15
             first_tracked_height = 0
             visible_heights_from_tip = 10
             extra_hotspot_heights = 2
@@ -719,4 +730,5 @@ mod tests {
         assert_eq!(network.nodes[1].info().id, 12);
         assert_eq!(network.nodes[1].info().implementation, "esplora");
     }
+
 }
