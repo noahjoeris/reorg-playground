@@ -23,7 +23,7 @@ COPY --from=builder /app/target/release/reorg-playground /usr/local/bin/reorg-pl
 
 RUN mkdir -p /app/config /data
 
-COPY config.production.toml /app/config/config.toml
+COPY config.docker.toml /app/config/config.toml
 
 ENV CONFIG_FILE=/app/config/config.toml
 ENV RUST_LOG=info

@@ -1,9 +1,75 @@
 services:
+  bitcoind-regtest-a:
+    image: bitcoin/bitcoin:latest
+    restart: unless-stopped
+    command:
+      - -regtest
+      - -server=1
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=reorg-playground
+      - -rpcpassword=reorg-playground
+      - -rpcport=18443
+      - -port=18444
+      - -addnode=bitcoind-regtest-b:18444
+      - -datadir=/home/bitcoin/.bitcoin
+    volumes:
+      - bitcoind_regtest_a_data:/home/bitcoin/.bitcoin
+    healthcheck:
+      test:
+        - CMD
+        - bitcoin-cli
+        - -regtest
+        - -rpcconnect=127.0.0.1
+        - -rpcport=18443
+        - -rpcuser=reorg-playground
+        - -rpcpassword=reorg-playground
+        - getblockchaininfo
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  bitcoind-regtest-b:
+    image: bitcoin/bitcoin:latest
+    restart: unless-stopped
+    command:
+      - -regtest
+      - -server=1
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=reorg-playground
+      - -rpcpassword=reorg-playground
+      - -rpcport=18443
+      - -port=18444
+      - -datadir=/home/bitcoin/.bitcoin
+    volumes:
+      - bitcoind_regtest_b_data:/home/bitcoin/.bitcoin
+    healthcheck:
+      test:
+        - CMD
+        - bitcoin-cli
+        - -regtest
+        - -rpcconnect=127.0.0.1
+        - -rpcport=18443
+        - -rpcuser=reorg-playground
+        - -rpcpassword=reorg-playground
+        - getblockchaininfo
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
     restart: unless-stopped
+    depends_on:
+      bitcoind-regtest-a:
+        condition: service_healthy
+      bitcoind-regtest-b:
+        condition: service_healthy
     environment:
       CONFIG_FILE: /app/config/config.toml
       RUST_LOG: info
@@ -11,7 +77,7 @@ services:
       - "2323"
     volumes:
       - app_db:/data
-      - ./config.production.toml:/app/config/config.toml:ro
+      - ./config.docker.toml:/app/config/config.toml:ro
 
   web:
     build:
@@ -25,3 +91,5 @@ services:
 
 volumes:
   app_db:
+  bitcoind_regtest_a_data:
+  bitcoind_regtest_b_data:

@@ -15,6 +15,22 @@ Inspired by [Fork Observer](https://github.com/0xb10c/fork-observer), but redesi
 
 ![Reorg Playground UI](screenshot.webp)
 
+
+## Getting Started
+
+1. Clone the repo: `git clone https://github.com/noahjoeris/reorg-playground.git && cd reorg-playground`
+2. Start everything: `docker compose up -d --build`
+3. Open the app: `http://localhost`
+4. Shutdown at anytime: `docker compose down`
+
+This Docker setup boots:
+- 2 connected Bitcoin Core Regtest nodes (`bitcoind-regtest-a`, `bitcoind-regtest-b`)
+- 1 backend service (Rust API)
+- 1 frontend service (served at `http://localhost`)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
 ## Features
 
 - Interactive block-header graph with forks/tips and collapse/expand behavior for dense sections.
@@ -23,31 +39,6 @@ Inspired by [Fork Observer](https://github.com/0xb10c/fork-observer), but redesi
 - Config-driven network/node setup through `config.toml`.
 - Header data collection and persistence in SQLite.
 - Modern, responsive UI for exploring forks and node state.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-## Quickstart Dev Mode
-
-1. Install prerequisites: Rust, Node.js + pnpm, bitcoind
-
-2. Start two local Regtest Bitcoin Core nodes. Adapt the script variables first, then run: `./scripts/start-regtest-pair.sh`
-
-3. Copy the config template and change the values to your needs. `cp config.toml.example config.toml`
-
-4. Start the backend server with `cargo run --release`
-
-5. Start the frontend with `cd ui && pnpm i && pnpm dev`
-
-6. Access the app: `http://localhost:5173`
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-## Quickstart Docker
-
-1. Start the stack: `docker compose up -d --build`
-2. Open the app: `http://localhost`
-
-Note: SQLite data is persisted in the Docker volume `app_db`.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

@@ -1,7 +1,7 @@
-# reorg-playground production configuration (mainnet/testnet only)
+# reorg-playground docker regtest configuration (mainnet/testnet/regtest)
 
 database_path = "/data/reorg.db"
-query_interval = 15
+query_interval = 3
 address = "0.0.0.0:2323"
 rss_base_url = ""
 
@@ -52,5 +52,37 @@ disable_node_controls = false # Only affects node controls on Regtest/custom Sig
     rpc_port = 443
     rpc_user = ""
     rpc_password = ""
+    use_rest = false
+    client_implementation = "bitcoincore"
+
+[[networks]]
+id = 2
+name = "Regtest"
+description = "Bitcoin Regtest (dockerized pair)"
+first_tracked_height = 0
+visible_heights_from_tip = 100
+extra_hotspot_heights = 20
+network_type = "Regtest"
+disable_node_controls = false # Only affects node controls on Regtest/custom Signet.
+
+    [[networks.nodes]]
+    id = 0
+    name = "Regtest Node A"
+    description = "Docker Bitcoin Core node A (regtest)"
+    rpc_host = "bitcoind-regtest-a"
+    rpc_port = 18443
+    rpc_user = "reorg-playground"
+    rpc_password = "reorg-playground"
+    use_rest = false
+    client_implementation = "bitcoincore"
+
+    [[networks.nodes]]
+    id = 1
+    name = "Regtest Node B"
+    description = "Docker Bitcoin Core node B (regtest)"
+    rpc_host = "bitcoind-regtest-b"
+    rpc_port = 18443
+    rpc_user = "reorg-playground"
+    rpc_password = "reorg-playground"
     use_rest = false
     client_implementation = "bitcoincore"
