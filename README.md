@@ -59,7 +59,7 @@ This Docker setup boots:
 
 ## Known Limitations
 - Node interactions are currently supported only for Bitcoin Core on Regtest; controls can be disabled per network via `disable_node_controls`.
-- The app currently relies on polling-based updates (push-based improvements are planned).
+- Backend node data collection still relies on per-network polling (`query_interval`), while frontend updates are pushed via SSE invalidation + snapshot refresh.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

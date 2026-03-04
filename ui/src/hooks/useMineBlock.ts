@@ -1,18 +1,39 @@
 import { useCallback, useMemo, useState } from 'react'
+import { mutate } from 'swr'
+import useSWRMutation from 'swr/mutation'
 import { mineBlock } from '../services/miningService'
-import type { Network, NodeInfo } from '../types'
+import { getNetworkSnapshotKey } from '../services/swrKeys'
+import type { MineBlockResponse, Network, NodeInfo } from '../types'
 import { isRegtestOrSignet } from '../utils'
 
 type MineControlNode = Pick<NodeInfo, 'id' | 'implementation'>
 type IsEnabledByNodeId = Record<number, boolean>
+type MineBlockMutationArgs = {
+  networkId: number
+  nodeId: number
+  count?: number
+}
+
+const MINE_BLOCK_MUTATION_KEY = 'mine-block'
 
 function supportsNodeMining(node: Pick<NodeInfo, 'implementation'>): boolean {
   return node.implementation === 'Bitcoin Core'
 }
 
 export function useMineBlock(network: Network | null, nodes: MineControlNode[] = []) {
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { trigger: triggerMineBlock, isMutating } = useSWRMutation<
+    MineBlockResponse,
+    Error,
+    string,
+    MineBlockMutationArgs
+  >(MINE_BLOCK_MUTATION_KEY, async (_key, { arg }) => {
+    const result = await mineBlock(arg.networkId, arg.nodeId, arg.count)
+    if (!result.success) {
+      throw new Error(result.error ?? 'Unknown error')
+    }
+    return result
+  })
   const nodeControlsEnabled = isRegtestOrSignet(network) && !network?.disable_node_controls
   const isEnabledByNodeId = useMemo(() => {
     const map: IsEnabledByNodeId = {}
@@ -34,23 +55,16 @@ export function useMineBlock(network: Network | null, nodes: MineControlNode[] =
         return
       }
 
-      setLoading(true)
       setError(null)
       try {
-        const result = await mineBlock(network.id, node.id, count)
-        if (!result.success) {
-          setError(result.error ?? 'Unknown error')
-        }
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Network error')
-      } finally {
-        setLoading(false)
+        await triggerMineBlock({ networkId: network.id, nodeId: node.id, count })
+        void mutate(getNetworkSnapshotKey(network.id))
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Network error')
       }
     },
-    [isEnabledByNodeId, network],
+    [isEnabledByNodeId, network, triggerMineBlock],
   )
 
-  const clearError = useCallback(() => setError(null), [])
-
-  return { mine, loading, error, clearError, isFeatureEnabled, isEnabledByNodeId }
+  return { mine, loading: isMutating, error, isFeatureEnabled, isEnabledByNodeId }
 }

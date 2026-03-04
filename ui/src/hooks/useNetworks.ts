@@ -1,31 +1,17 @@
-import { useEffect, useState } from 'react'
+import useSWR from 'swr'
 import { fetchNetworks } from '../services/networksService'
+import { SWR_KEY_NETWORKS } from '../services/swrKeys'
 import type { Network } from '../types'
 
 export function useNetworks() {
-  const [networks, setNetworks] = useState<Network[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data, error, isLoading } = useSWR<Network[], Error>(SWR_KEY_NETWORKS, () => fetchNetworks(), {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+  })
 
-  useEffect(() => {
-    let cancelled = false
-    fetchNetworks()
-      .then(data => {
-        if (!cancelled) {
-          setNetworks(data)
-          setLoading(false)
-        }
-      })
-      .catch(err => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err))
-          setLoading(false)
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  return { networks, loading, error }
+  return {
+    networks: data ?? [],
+    loading: isLoading,
+    error: error?.message ?? null,
+  }
 }

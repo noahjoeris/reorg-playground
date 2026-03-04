@@ -1,4 +1,5 @@
-/** Opens the SSE stream that emits `cache_changed` events from the backend. */
-export function createCacheChangeEventSource(): EventSource {
-  return new EventSource('/api/changes')
+/** Opens the SSE stream that emits cache-change events from the backend. */
+export function openCacheChangesStream(networkId?: number): EventSource {
+  const suffix = networkId === undefined ? '' : `?network_id=${encodeURIComponent(networkId)}`
+  return new EventSource(`/api/cache-changes${suffix}`)
 }

@@ -1,12 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { mutate } from 'swr'
+import useSWRMutation from 'swr/mutation'
 import { setNodeP2PConnectionActive } from '../services/nodeP2PConnectionService'
-import type { Network, NodeInfo } from '../types'
+import { getNetworkSnapshotKey } from '../services/swrKeys'
+import type { Network, NodeInfo, SetNodeP2PConnectionResponse } from '../types'
 import { isRegtestOrSignet } from '../utils'
 
 type LoadingByNodeId = Record<number, boolean>
 type ErrorByNodeId = Record<number, string | null>
 type P2PConnectionActiveByNodeId = Record<number, boolean>
 type IsEnabledByNodeId = Record<number, boolean>
+type SetNodeP2PConnectionArgs = {
+  networkId: number
+  nodeId: number
+  active: boolean
+}
+
+const SET_NODE_P2P_CONNECTION_MUTATION_KEY = 'set-node-p2p-connection'
 
 function supportsNodeP2PControl(node: NodeInfo): boolean {
   return node.implementation === 'Bitcoin Core'
@@ -16,6 +26,18 @@ export function useNodeP2PConnection(network: Network | null, nodes: NodeInfo[] 
   const [loadingByNodeId, setLoadingByNodeId] = useState<LoadingByNodeId>({})
   const [errorByNodeId, setErrorByNodeId] = useState<ErrorByNodeId>({})
   const [p2pConnectionActiveByNodeId, setP2PConnectionActiveByNodeId] = useState<P2PConnectionActiveByNodeId>({})
+  const { trigger: triggerSetNodeP2PConnection } = useSWRMutation<
+    SetNodeP2PConnectionResponse,
+    Error,
+    string,
+    SetNodeP2PConnectionArgs
+  >(SET_NODE_P2P_CONNECTION_MUTATION_KEY, async (_key, { arg }) => {
+    const result = await setNodeP2PConnectionActive(arg.networkId, arg.nodeId, arg.active)
+    if (!result.success) {
+      throw new Error(result.error ?? 'Unknown error')
+    }
+    return result
+  })
   const nodeControlsEnabled = isRegtestOrSignet(network) && !network?.disable_node_controls
   const isEnabledByNodeId = useMemo(() => {
     const map: IsEnabledByNodeId = {}
@@ -55,11 +77,8 @@ export function useNodeP2PConnection(network: Network | null, nodes: NodeInfo[] 
       setErrorByNodeId(current => ({ ...current, [nodeId]: null }))
 
       try {
-        const result = await setNodeP2PConnectionActive(network.id, nodeId, active)
-        if (!result.success) {
-          setErrorByNodeId(current => ({ ...current, [nodeId]: result.error ?? 'Unknown error' }))
-          return false
-        }
+        await triggerSetNodeP2PConnection({ networkId: network.id, nodeId, active })
+        void mutate(getNetworkSnapshotKey(network.id))
         return true
       } catch (error) {
         setErrorByNodeId(current => ({
@@ -71,7 +90,7 @@ export function useNodeP2PConnection(network: Network | null, nodes: NodeInfo[] 
         setLoadingByNodeId(current => ({ ...current, [nodeId]: false }))
       }
     },
-    [isEnabledByNodeId, network],
+    [isEnabledByNodeId, network, triggerSetNodeP2PConnection],
   )
 
   const toggleNodeP2PConnection = useCallback(

@@ -92,13 +92,7 @@ async fn main() -> Result<(), MainError> {
         let tree: Tree = Arc::new(Mutex::new(tree_info));
         cache::populate_cache(&network, &tree, &caches).await;
 
-        spawn_network_tasks(
-            &network,
-            tree,
-            &db,
-            &caches,
-            &cache_changed_tx,
-        );
+        spawn_network_tasks(&network, tree, &db, &caches, &cache_changed_tx);
     }
 
     let state = AppState {
@@ -112,7 +106,7 @@ async fn main() -> Result<(), MainError> {
     let app = Router::new()
         .route("/api/{network_id}/data.json", get(api::data_response))
         .route("/api/networks.json", get(api::networks_response))
-        .route("/api/changes", get(api::changes_sse))
+        .route("/api/cache-changes", get(api::cache_changes_sse))
         .route("/api/{network_id}/mine-block", post(api::mine_block))
         .route(
             "/api/{network_id}/network-active",

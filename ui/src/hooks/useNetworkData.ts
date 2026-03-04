@@ -1,70 +1,126 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { createCacheChangeEventSource } from '../services/cacheChangeEventService'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import useSWR from 'swr'
+import { openCacheChangesStream } from '../services/cacheChangeEventService'
 import { fetchNetworkSnapshot } from '../services/networkSnapshotService'
+import { getNetworkSnapshotKey, type NetworkSnapshotKey } from '../services/swrKeys'
 import type { ConnectionStatus, DataResponse } from '../types'
 
-export function useNetworkData(networkId: number | null) {
-  const [data, setData] = useState<DataResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting')
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+const REFRESH_DEBOUNCE_MS = 150
+const EVENT_CACHE_CHANGED = 'cache_changed'
+const EVENT_RESYNC_REQUIRED = 'resync_required'
 
-  const loadData = useCallback(
-    (showLoading: boolean) => {
-      if (networkId === null) return
-      if (showLoading) setLoading(true)
-      fetchNetworkSnapshot(networkId)
-        .then(d => {
-          setData(d)
-          setError(null)
-          setLoading(false)
-        })
-        .catch(err => {
-          setError(err instanceof Error ? err.message : String(err))
-          setLoading(false)
-        })
+type CacheChangedEvent = {
+  network_id?: number
+}
+
+function mapEventSourceReadyStateToConnectionStatus(readyState: number): ConnectionStatus {
+  if (readyState === EventSource.CONNECTING) return 'connecting'
+  if (readyState === EventSource.CLOSED) return 'closed'
+  return 'error'
+}
+
+function parseCacheChangedNetworkId(event: Event): number | null {
+  const messageEvent = event as MessageEvent<string>
+  try {
+    const parsed = JSON.parse(messageEvent.data) as CacheChangedEvent
+    return typeof parsed.network_id === 'number' ? parsed.network_id : null
+  } catch {
+    return null
+  }
+}
+
+function fetchNetworkSnapshotByKey([, networkId]: NetworkSnapshotKey) {
+  return fetchNetworkSnapshot(networkId)
+}
+
+export function useNetworkData(networkId: number | null) {
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
+    networkId === null ? 'closed' : 'connecting',
+  )
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const snapshotKey = useMemo(() => (networkId === null ? null : getNetworkSnapshotKey(networkId)), [networkId])
+
+  const { data, error, isLoading, mutate } = useSWR<DataResponse, Error, NetworkSnapshotKey | null>(
+    snapshotKey,
+    fetchNetworkSnapshotByKey,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      keepPreviousData: false,
     },
-    [networkId],
   )
 
-  // Initial fetch on network change
-  useEffect(() => {
-    if (networkId === null) return
-    setData(null)
-    loadData(true)
-  }, [networkId, loadData])
+  const clearScheduledRefresh = useCallback(() => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current)
+      refreshTimerRef.current = null
+    }
+  }, [])
 
-  // SSE subscription with 500ms debounced refetch
+  const scheduleRefresh = useCallback(() => {
+    clearScheduledRefresh()
+    refreshTimerRef.current = setTimeout(() => {
+      void mutate()
+    }, REFRESH_DEBOUNCE_MS)
+  }, [clearScheduledRefresh, mutate])
+
+  // Ensure timers are always cleaned up on unmount.
+  useEffect(
+    () => () => {
+      clearScheduledRefresh()
+    },
+    [clearScheduledRefresh],
+  )
+
+  // Update connection status baseline when selected network changes.
   useEffect(() => {
-    if (networkId === null) return
+    clearScheduledRefresh()
+
+    if (networkId === null) {
+      setConnectionStatus('closed')
+      return
+    }
 
     setConnectionStatus('connecting')
-    const es = createCacheChangeEventSource()
+  }, [networkId, clearScheduledRefresh])
 
-    es.onopen = () => setConnectionStatus('connected')
-    es.onerror = () => {
-      setConnectionStatus(es.readyState === EventSource.CLOSED ? 'closed' : 'error')
+  // Subscribe to SSE invalidation events and schedule debounced snapshot refreshes.
+  useEffect(() => {
+    if (networkId === null) return
+
+    const eventSource = openCacheChangesStream(networkId)
+
+    const handleCacheChanged = (event: Event) => {
+      const changedNetworkId = parseCacheChangedNetworkId(event)
+      if (changedNetworkId !== null && changedNetworkId !== networkId) {
+        return
+      }
+      scheduleRefresh()
     }
 
-    es.addEventListener('cache_changed', (event: Event) => {
-      const messageEvent = event as MessageEvent
-      try {
-        const parsed = JSON.parse(messageEvent.data)
-        if (parsed.network_id !== networkId) return
-      } catch {
-        // Non-JSON event or no network filter — refetch anyway
-      }
+    const handleResyncRequired = () => {
+      scheduleRefresh()
+    }
 
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(() => loadData(false), 150)
-    })
+    eventSource.onopen = () => setConnectionStatus('connected')
+    eventSource.onerror = () => setConnectionStatus(mapEventSourceReadyStateToConnectionStatus(eventSource.readyState))
+
+    eventSource.addEventListener(EVENT_CACHE_CHANGED, handleCacheChanged)
+    eventSource.addEventListener(EVENT_RESYNC_REQUIRED, handleResyncRequired)
 
     return () => {
-      es.close()
-      if (debounceRef.current) clearTimeout(debounceRef.current)
+      eventSource.removeEventListener(EVENT_CACHE_CHANGED, handleCacheChanged)
+      eventSource.removeEventListener(EVENT_RESYNC_REQUIRED, handleResyncRequired)
+      eventSource.close()
+      clearScheduledRefresh()
     }
-  }, [networkId, loadData])
+  }, [networkId, scheduleRefresh, clearScheduledRefresh])
 
-  return { data, loading, error, connectionStatus }
+  return {
+    data: networkId === null ? null : (data ?? null),
+    loading: networkId === null ? false : isLoading,
+    error: networkId === null ? null : (error?.message ?? null),
+    connectionStatus,
+  }
 }

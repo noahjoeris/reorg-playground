@@ -1,16 +1,19 @@
 use std::convert::Infallible;
+use std::time::Duration;
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::sse::{Event, KeepAlive, Sse},
 };
 use futures_util::StreamExt;
+use futures_util::future::ready;
 use futures_util::stream::Stream;
 use log::error;
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 
 use crate::config::Network;
 use crate::error::FetchError;
@@ -55,26 +58,63 @@ pub async fn networks_response(State(state): State<AppState>) -> Json<NetworksJs
     })
 }
 
-pub async fn changes_sse(
+#[derive(Deserialize)]
+pub struct CacheChangesQuery {
+    pub network_id: Option<u32>,
+}
+
+#[derive(Serialize)]
+pub struct ResyncRequired {
+    pub reason: String,
+    pub dropped_messages: u64,
+}
+
+pub async fn cache_changes_sse(
+    Query(query): Query<CacheChangesQuery>,
     State(state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let rx = state.cache_changed_tx.subscribe();
-    let stream = BroadcastStream::new(rx).map(|result| {
-        let network_id = match result {
-            Ok(id) => id,
-            Err(e) => {
-                error!("Could not SSE notify about tip changed event: {}", e);
-                u32::MAX
+    let filter_network_id = query.network_id;
+
+    let stream = BroadcastStream::new(rx).filter_map(move |result| {
+        let maybe_event = match result {
+            Ok(network_id) => {
+                if filter_network_id.is_some_and(|selected_id| selected_id != network_id) {
+                    None
+                } else {
+                    Some(
+                        Event::default()
+                            .event("cache_changed")
+                            .json_data(DataChanged { network_id })
+                            .unwrap_or_default(),
+                    )
+                }
+            }
+            Err(BroadcastStreamRecvError::Lagged(dropped_messages)) => {
+                error!(
+                    "SSE subscriber lagged, dropped {} cache_changed events.",
+                    dropped_messages
+                );
+                Some(
+                    Event::default()
+                        .event("resync_required")
+                        .json_data(ResyncRequired {
+                            reason: "lagged".to_string(),
+                            dropped_messages,
+                        })
+                        .unwrap_or_default(),
+                )
             }
         };
-        Ok::<_, Infallible>(
-            Event::default()
-                .event("cache_changed")
-                .json_data(DataChanged { network_id })
-                .unwrap_or_default(),
-        )
+
+        ready(maybe_event.map(Ok::<_, Infallible>))
     });
-    Sse::new(stream).keep_alive(KeepAlive::default())
+
+    Sse::new(stream).keep_alive(
+        KeepAlive::new()
+            .interval(Duration::from_secs(10))
+            .text("keep-alive"),
+    )
 }
 
 // -- Mine block --
