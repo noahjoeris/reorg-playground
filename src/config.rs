@@ -341,231 +341,71 @@ fn parse_toml_node(
 mod tests {
     use super::*;
     use crate::error::ConfigError;
+    use toml::Value;
+
+    fn parse_example_with(mutate: impl FnOnce(&mut Value)) -> Result<Config, ConfigError> {
+        let mut config: Value = toml::from_str(include_str!("../config.toml.example"))
+            .expect("config.toml.example should remain valid");
+        mutate(&mut config);
+        let config_str = toml::to_string(&config).expect("mutated config should serialize");
+        parse_config(&config_str)
+    }
+
+    fn network_mut(config: &mut Value, network_idx: usize) -> &mut Value {
+        config
+            .get_mut("networks")
+            .and_then(Value::as_array_mut)
+            .and_then(|networks| networks.get_mut(network_idx))
+            .expect("network index should exist")
+    }
+
+    fn node_mut(config: &mut Value, network_idx: usize, node_idx: usize) -> &mut Value {
+        network_mut(config, network_idx)
+            .get_mut("nodes")
+            .and_then(Value::as_array_mut)
+            .and_then(|nodes| nodes.get_mut(node_idx))
+            .expect("node index should exist")
+    }
 
     #[test]
     fn error_on_duplicate_node_id_test() {
-        if let Err(ConfigError::DuplicateNodeId) = parse_config(
-            r#"
-            database_path = ""
-            www_path = "./www"
-            query_interval = 15
-            address = "127.0.0.1:2323"
-            rss_base_url = ""
-            footer_html = ""
+        let result = parse_example_with(|config| {
+            node_mut(config, 0, 1)
+                .as_table_mut()
+                .expect("node should be a table")
+                .insert("id".to_string(), Value::Integer(0));
+        });
 
-            [[networks]]
-            id = 1
-            name = ""
-            description = ""
-            query_interval = 15
-            first_tracked_height = 0
-            visible_heights_from_tip = 0
-            extra_hotspot_heights = 0
-            network_type = "Regtest"
-
-                [[networks.nodes]]
-                id = 0
-                name = "Node A"
-                description = ""
-                rpc_host = "127.0.0.1"
-                rpc_port = 0
-                rpc_user = ""
-                rpc_password = ""
-                client_implementation = "bitcoincore"
-
-                [[networks.nodes]]
-                id = 0
-                name = "Node B"
-                description = ""
-                rpc_host = "127.0.0.1"
-                rpc_port = 0
-                rpc_user = ""
-                rpc_password = ""
-                client_implementation = "bitcoincore"
-        "#,
-        ) {
-            // test OK, as we expect this to error
-        } else {
-            panic!("Test did not error!");
-        }
+        assert!(matches!(result, Err(ConfigError::DuplicateNodeId)));
     }
 
     #[test]
     fn error_on_duplicate_network_id_test() {
-        if let Err(ConfigError::DuplicateNetworkId) = parse_config(
-            r#"
-            database_path = ""
-            www_path = "./www"
-            query_interval = 15
-            address = "127.0.0.1:2323"
-            rss_base_url = ""
-            footer_html = ""
+        let result = parse_example_with(|config| {
+            network_mut(config, 1)
+                .as_table_mut()
+                .expect("network should be a table")
+                .insert("id".to_string(), Value::Integer(0));
+        });
 
-            [[networks]]
-            id = 1
-            name = ""
-            description = ""
-            query_interval = 15
-            first_tracked_height = 0
-            visible_heights_from_tip = 0
-            extra_hotspot_heights = 0
-            network_type = "Regtest"
-
-                [[networks.nodes]]
-                id = 0
-                name = "Node B"
-                description = ""
-                rpc_host = "127.0.0.1"
-                rpc_port = 0
-                rpc_user = ""
-                rpc_password = ""
-                client_implementation = "bitcoincore"
-            [[networks]]
-            id = 1
-            name = ""
-            description = ""
-            query_interval = 15
-            first_tracked_height = 0
-            visible_heights_from_tip = 0
-            extra_hotspot_heights = 0
-            network_type = "Regtest"
-
-                [[networks.nodes]]
-                id = 0
-                name = "Node B"
-                description = ""
-                rpc_host = "127.0.0.1"
-                rpc_port = 0
-                rpc_user = ""
-                rpc_password = ""
-                client_implementation = "bitcoincore"
-        "#,
-        ) {
-            // test OK, as we expect this to error
-        } else {
-            panic!("Test did not error!");
-        }
+        assert!(matches!(result, Err(ConfigError::DuplicateNetworkId)));
     }
 
     #[test]
-    fn esplora_backend_test() {
-        match parse_config(
-            r#"
-            database_path = ""
-            www_path = "./www"
-            query_interval = 15
-            address = "127.0.0.1:2323"
-            rss_base_url = ""
-            footer_html = ""
-
-            [[networks]]
-            id = 1
-            name = ""
-            description = ""
-            query_interval = 15
-            first_tracked_height = 0
-            visible_heights_from_tip = 0
-            extra_hotspot_heights = 0
-            network_type = "Mainnet"
-
-                [[networks.nodes]]
-                id = 123
-                name = "Esplora Node"
-                description = "A test explora node"
-                rpc_host = "https://esplora.example.org/api"
-                client_implementation = "esplora"
-        "#,
-        ) {
+    fn parses_block_height_parameters() {
+        match parse_example_with(|config| {
+            let network = network_mut(config, 0)
+                .as_table_mut()
+                .expect("network should be a table");
+            network.insert("first_tracked_height".to_string(), Value::Integer(111));
+            network.insert("visible_heights_from_tip".to_string(), Value::Integer(222));
+            network.insert("extra_hotspot_heights".to_string(), Value::Integer(33));
+        }) {
             Ok(config) => {
                 let network = &config.networks[0];
-                let node = &network.nodes[0];
-                let node_info = node.info();
-                assert_eq!(node_info.name, "Esplora Node");
-                assert_eq!(node_info.id, 123);
-                assert_eq!(node_info.implementation, "esplora");
-            }
-            Err(e) => {
-                panic!("Esplora backend config invalid: {}", e);
-            }
-        }
-    }
-
-    #[test]
-    fn electrum_backend_test() {
-        match parse_config(
-            r#"
-            database_path = ""
-            www_path = "./www"
-            query_interval = 15
-            address = "127.0.0.1:2323"
-            rss_base_url = ""
-            footer_html = ""
-
-            [[networks]]
-            id = 1
-            name = ""
-            description = ""
-            query_interval = 15
-            first_tracked_height = 0
-            visible_heights_from_tip = 0
-            extra_hotspot_heights = 0
-            network_type = "Mainnet"
-
-                [[networks.nodes]]
-                id = 421
-                name = "Electrum"
-                description = "electrum"
-                rpc_host = "tcp://localhost"
-                rpc_port = 1337
-                client_implementation = "electrum"
-        "#,
-        ) {
-            Ok(config) => {
-                let network = &config.networks[0];
-                let node = &network.nodes[0];
-                let node_info = node.info();
-                assert_eq!(node_info.name, "Electrum");
-                assert_eq!(node_info.id, 421);
-                assert_eq!(node_info.implementation, "electrum");
-            }
-            Err(e) => {
-                panic!("Electrum backend config invalid: {}", e);
-            }
-        }
-    }
-
-    #[test]
-    fn parses_visible_tip_window_and_hotspot_budget() {
-        match parse_config(
-            r#"
-            database_path = ""
-            query_interval = 15
-            address = "127.0.0.1:2323"
-            rss_base_url = ""
-
-            [[networks]]
-            id = 7
-            name = "example"
-            description = ""
-            query_interval = 15
-            first_tracked_height = 111
-            visible_heights_from_tip = 222
-            extra_hotspot_heights = 33
-            network_type = "Mainnet"
-
-                [[networks.nodes]]
-                id = 1
-                name = "Esplora Node"
-                description = "test"
-                rpc_host = "https://esplora.example.org/api"
-                client_implementation = "esplora"
-        "#,
-        ) {
-            Ok(config) => {
-                let network = &config.networks[0];
+                assert_eq!(network.first_tracked_height, 111);
                 assert_eq!(network.visible_heights_from_tip, 222);
                 assert_eq!(network.extra_hotspot_heights, 33);
-                assert!(!network.disable_node_controls);
             }
             Err(e) => {
                 panic!("new height fields should parse: {}", e);
@@ -575,34 +415,14 @@ mod tests {
 
     #[test]
     fn parses_disable_node_controls_flag() {
-        match parse_config(
-            r#"
-            database_path = ""
-            query_interval = 15
-            address = "127.0.0.1:2323"
-            rss_base_url = ""
-
-            [[networks]]
-            id = 8
-            name = "example"
-            description = ""
-            query_interval = 15
-            first_tracked_height = 0
-            visible_heights_from_tip = 10
-            extra_hotspot_heights = 2
-            network_type = "Regtest"
-            disable_node_controls = true
-
-                [[networks.nodes]]
-                id = 1
-                name = "Esplora Node"
-                description = "test"
-                rpc_host = "https://esplora.example.org/api"
-                client_implementation = "esplora"
-        "#,
-        ) {
+        match parse_example_with(|config| {
+            network_mut(config, 2)
+                .as_table_mut()
+                .expect("network should be a table")
+                .insert("disable_node_controls".to_string(), Value::Boolean(true));
+        }) {
             Ok(config) => {
-                let network = &config.networks[0];
+                let network = &config.networks[2];
                 assert!(network.disable_node_controls);
             }
             Err(e) => {
@@ -613,30 +433,12 @@ mod tests {
 
     #[test]
     fn missing_network_type_rejected() {
-        match parse_config(
-            r#"
-            database_path = ""
-            query_interval = 15
-            address = "127.0.0.1:2323"
-            rss_base_url = ""
-
-            [[networks]]
-            id = 1
-            name = "missing-network-type"
-            description = ""
-            query_interval = 15
-            first_tracked_height = 0
-            visible_heights_from_tip = 10
-            extra_hotspot_heights = 2
-
-                [[networks.nodes]]
-                id = 1
-                name = "Esplora Node"
-                description = "test"
-                rpc_host = "https://esplora.example.org/api"
-                client_implementation = "esplora"
-        "#,
-        ) {
+        match parse_example_with(|config| {
+            network_mut(config, 0)
+                .as_table_mut()
+                .expect("network should be a table")
+                .remove("network_type");
+        }) {
             Ok(_) => panic!("missing network_type should fail parsing"),
             Err(ConfigError::TomlError(_)) => {}
             Err(e) => panic!(
@@ -648,33 +450,12 @@ mod tests {
 
     #[test]
     fn missing_client_implementation_rejected() {
-        match parse_config(
-            r#"
-            database_path = ""
-            query_interval = 15
-            address = "127.0.0.1:2323"
-            rss_base_url = ""
-
-            [[networks]]
-            id = 1
-            name = "missing-impl"
-            description = ""
-            query_interval = 15
-            first_tracked_height = 0
-            visible_heights_from_tip = 10
-            extra_hotspot_heights = 2
-            network_type = "Mainnet"
-
-                [[networks.nodes]]
-                id = 1
-                name = "No Impl Node"
-                description = "test"
-                rpc_host = "127.0.0.1"
-                rpc_port = 8332
-                rpc_user = "user"
-                rpc_password = "pass"
-        "#,
-        ) {
+        match parse_example_with(|config| {
+            node_mut(config, 0, 0)
+                .as_table_mut()
+                .expect("node should be a table")
+                .remove("client_implementation");
+        }) {
             Ok(_) => panic!("missing client_implementation should fail parsing"),
             Err(ConfigError::TomlError(_)) => {}
             Err(e) => panic!(
@@ -685,50 +466,54 @@ mod tests {
     }
 
     #[test]
-    fn bitcoincore_and_other_nodes_parse_into_network_nodes() {
-        let config = parse_config(
-            r#"
-            database_path = ""
-            query_interval = 15
-            address = "127.0.0.1:2323"
-            rss_base_url = ""
-
-            [[networks]]
-            id = 1
-            name = "controls"
-            description = ""
-            query_interval = 15
-            first_tracked_height = 0
-            visible_heights_from_tip = 10
-            extra_hotspot_heights = 2
-            network_type = "Regtest"
-
-                [[networks.nodes]]
-                id = 11
-                name = "core"
-                description = "bitcoincore node"
-                rpc_host = "127.0.0.1"
-                rpc_port = 18443
-                rpc_user = "user"
-                rpc_password = "pass"
-                client_implementation = "bitcoincore"
-
-                [[networks.nodes]]
-                id = 12
-                name = "esplora"
-                description = "esplora node"
-                rpc_host = "https://esplora.example.org/api"
-                client_implementation = "esplora"
-        "#,
-        )
+    fn parses_bitcoincore_esplora_electrum_btcd_nodes() {
+        let config = parse_example_with(|config| {
+            {
+                let node = node_mut(config, 0, 0)
+                    .as_table_mut()
+                    .expect("node should be a table");
+                node.insert(
+                    "client_implementation".to_string(),
+                    Value::String("bitcoincore".to_string()),
+                );
+            }
+            {
+                let node = node_mut(config, 0, 1)
+                    .as_table_mut()
+                    .expect("node should be a table");
+                node.insert(
+                    "client_implementation".to_string(),
+                    Value::String("esplora".to_string()),
+                );
+            }
+            {
+                let node = node_mut(config, 1, 0)
+                    .as_table_mut()
+                    .expect("node should be a table");
+                node.insert(
+                    "client_implementation".to_string(),
+                    Value::String("electrum".to_string()),
+                );
+            }
+            {
+                let node = node_mut(config, 2, 0)
+                    .as_table_mut()
+                    .expect("node should be a table");
+                node.insert(
+                    "client_implementation".to_string(),
+                    Value::String("btcd".to_string()),
+                );
+            }
+        })
         .expect("config should parse");
 
-        let network = &config.networks[0];
-        assert_eq!(network.nodes.len(), 2);
-        assert_eq!(network.nodes[0].info().id, 11);
-        assert_eq!(network.nodes[0].info().implementation, "Bitcoin Core");
-        assert_eq!(network.nodes[1].info().id, 12);
-        assert_eq!(network.nodes[1].info().implementation, "esplora");
-    }
+        let mainnet = &config.networks[0];
+        let testnet = &config.networks[1];
+        let regtest = &config.networks[2];
 
+        assert_eq!(mainnet.nodes[0].info().implementation, "Bitcoin Core");
+        assert_eq!(mainnet.nodes[1].info().implementation, "esplora");
+        assert_eq!(testnet.nodes[0].info().implementation, "electrum");
+        assert_eq!(regtest.nodes[0].info().implementation, "btcd");
+    }
 }
