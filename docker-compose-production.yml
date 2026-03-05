@@ -1,0 +1,36 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: reorg-playground-backend:manual
+    restart: unless-stopped
+    environment:
+      CONFIG_FILE: /app/config/config.toml
+      RUST_LOG: info
+    expose:
+      - "2323"
+    volumes:
+      - app_db:/data
+      - ./config.production.toml:/app/config/config.toml:ro
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: reorg-playground-web:manual
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  app_db:
+  caddy_data:
+  caddy_config:
