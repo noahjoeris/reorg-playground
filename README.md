@@ -15,8 +15,11 @@ Inspired by [Fork Observer](https://github.com/0xb10c/fork-observer), but redesi
 
 ![Reorg Playground UI](screenshot.webp)
 
-
 ## Getting Started
+
+You can explore the hosted view-only deployment at [https://reorgplayground.app](https://reorgplayground.app).
+
+For interactive Regtest workflows, run the project locally:
 
 1. Clone the repo: `git clone https://github.com/noahjoeris/reorg-playground.git && cd reorg-playground`
 2. Start everything: `docker compose up -d --build`
@@ -28,8 +31,9 @@ This Docker setup boots:
 - 1 backend service (Rust API)
 - 1 frontend service (served at `http://localhost`)
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+The hosted deployment is meant for observing live network state. Use the local Docker setup when you want to create competing branches, mine blocks, or disconnect/reconnect nodes to force Regtest reorg scenarios.
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Features
 
@@ -67,7 +71,6 @@ This Docker setup boots:
 
 - [ ] `Support custom Signet for node interactions`
 - [ ] `Improve frontend-backend-node communication`
-- [ ] `Add docker deployment`
 - [ ] `Explore and enable more RPC calls and combinations`
 - [ ] `Improve UI polish and resolve known issues`
 
