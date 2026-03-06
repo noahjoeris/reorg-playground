@@ -9,9 +9,9 @@ id = 0
 name = "Mainnet"
 description = "Bitcoin Mainnet"
 query_interval = 15
-first_tracked_height = 937000
-visible_heights_from_tip = 500
-extra_hotspot_heights = 100
+first_tracked_height = 870000
+visible_heights_from_tip = 8000
+extra_hotspot_heights = 5000
 network_type = "Mainnet"
 disable_node_controls = false
 
@@ -39,9 +39,9 @@ id = 1
 name = "Testnet"
 description = "Bitcoin Testnet"
 query_interval = 15
-first_tracked_height = 4841135
-visible_heights_from_tip = 500
-extra_hotspot_heights = 100
+first_tracked_height = 4800000
+visible_heights_from_tip = 8000
+extra_hotspot_heights = 5000
 network_type = "Testnet"
 disable_node_controls = false
 
