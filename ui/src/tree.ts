@@ -260,6 +260,7 @@ type DepthLookup = {
   heightToDepth: Map<number, number>
   foldToDepth: Map<string, number>
 }
+type TraversalFrame = { blockId: number; stage: 'enter' } | { blockId: number; stage: 'exit'; childIds: number[] }
 type MineGraphElements = {
   mineNodes: MineTreeNodeType[]
   mineEdges: Edge[]
@@ -319,41 +320,61 @@ function createSlotLayout(
   const slotByBlockId = new Map<number, number>()
   const visiting = new Set<number>()
 
-  function assignSlot(blockId: number): number {
-    const existingSlot = slotByBlockId.get(blockId)
-    if (existingSlot !== undefined) return existingSlot
+  // Use an explicit stack so very long chains do not overflow the browser call stack.
+  function assignSlot(startBlockId: number): number {
+    const stack: TraversalFrame[] = [{ blockId: startBlockId, stage: 'enter' }]
 
-    if (visiting.has(blockId)) {
-      const fallbackSlot = nextLeafSlot++
-      slotByBlockId.set(blockId, fallbackSlot)
-      return fallbackSlot
+    while (stack.length > 0) {
+      const frame = stack.pop()
+      if (!frame) break
+
+      if (frame.stage === 'enter') {
+        const existingSlot = slotByBlockId.get(frame.blockId)
+        if (existingSlot !== undefined) continue
+
+        if (visiting.has(frame.blockId)) {
+          slotByBlockId.set(frame.blockId, nextLeafSlot++)
+          continue
+        }
+
+        const block = blockMap.get(frame.blockId)
+        if (!block) {
+          slotByBlockId.set(frame.blockId, nextLeafSlot++)
+          continue
+        }
+
+        const childIds = (childrenMap.get(frame.blockId) ?? []).filter(childId => blockMap.has(childId))
+        if (childIds.length === 0) {
+          slotByBlockId.set(frame.blockId, nextLeafSlot++)
+          continue
+        }
+
+        visiting.add(frame.blockId)
+        stack.push({ blockId: frame.blockId, stage: 'exit', childIds })
+
+        for (let index = childIds.length - 1; index >= 0; index -= 1) {
+          stack.push({ blockId: childIds[index], stage: 'enter' })
+        }
+        continue
+      }
+
+      visiting.delete(frame.blockId)
+
+      const childSlots = frame.childIds
+        .map(childId => slotByBlockId.get(childId))
+        .filter((slot): slot is number => slot !== undefined)
+
+      if (childSlots.length === 0) {
+        slotByBlockId.set(frame.blockId, nextLeafSlot++)
+        continue
+      }
+
+      const minChildSlot = Math.min(...childSlots)
+      const maxChildSlot = Math.max(...childSlots)
+      slotByBlockId.set(frame.blockId, (minChildSlot + maxChildSlot) / 2)
     }
 
-    const block = blockMap.get(blockId)
-    if (!block) {
-      const fallbackSlot = nextLeafSlot++
-      slotByBlockId.set(blockId, fallbackSlot)
-      return fallbackSlot
-    }
-
-    visiting.add(blockId)
-    const childIds = (childrenMap.get(blockId) ?? []).filter(childId => blockMap.has(childId))
-
-    if (childIds.length === 0) {
-      const leafSlot = nextLeafSlot++
-      slotByBlockId.set(blockId, leafSlot)
-      visiting.delete(blockId)
-      return leafSlot
-    }
-
-    const childSlots = childIds.map(assignSlot)
-    const minChildSlot = Math.min(...childSlots)
-    const maxChildSlot = Math.max(...childSlots)
-    const centeredSlot = (minChildSlot + maxChildSlot) / 2
-
-    slotByBlockId.set(blockId, centeredSlot)
-    visiting.delete(blockId)
-    return centeredSlot
+    return slotByBlockId.get(startBlockId) ?? 0
   }
 
   const rootBlocks = getRootBlocks(blocks, blockMap)
@@ -385,30 +406,61 @@ function createNextMineSlotResolver(
   const subtreeBoundsByBlockId = new Map<number, SlotBounds>()
   const resolvingSubtree = new Set<number>()
 
-  function getSubtreeBounds(blockId: number): SlotBounds {
-    const cachedBounds = subtreeBoundsByBlockId.get(blockId)
+  function getSubtreeBounds(startBlockId: number): SlotBounds {
+    const cachedBounds = subtreeBoundsByBlockId.get(startBlockId)
     if (cachedBounds) return cachedBounds
 
-    const ownSlot = slotById.get(blockId) ?? 0
-    if (resolvingSubtree.has(blockId)) {
-      return { min: ownSlot, max: ownSlot }
+    const stack: TraversalFrame[] = [{ blockId: startBlockId, stage: 'enter' }]
+
+    while (stack.length > 0) {
+      const frame = stack.pop()
+      if (!frame) break
+
+      if (frame.stage === 'enter') {
+        const cached = subtreeBoundsByBlockId.get(frame.blockId)
+        if (cached) continue
+
+        const ownSlot = slotById.get(frame.blockId) ?? 0
+        if (resolvingSubtree.has(frame.blockId)) {
+          subtreeBoundsByBlockId.set(frame.blockId, { min: ownSlot, max: ownSlot })
+          continue
+        }
+
+        const childIds = (childrenMap.get(frame.blockId) ?? []).filter(childId => blockMap.has(childId))
+        if (childIds.length === 0) {
+          subtreeBoundsByBlockId.set(frame.blockId, { min: ownSlot, max: ownSlot })
+          continue
+        }
+
+        resolvingSubtree.add(frame.blockId)
+        stack.push({ blockId: frame.blockId, stage: 'exit', childIds })
+
+        for (let index = childIds.length - 1; index >= 0; index -= 1) {
+          stack.push({ blockId: childIds[index], stage: 'enter' })
+        }
+        continue
+      }
+
+      const ownSlot = slotById.get(frame.blockId) ?? 0
+      let minSlot = ownSlot
+      let maxSlot = ownSlot
+
+      for (const childId of frame.childIds) {
+        const childBounds = subtreeBoundsByBlockId.get(childId)
+        if (!childBounds) continue
+        if (childBounds.min < minSlot) minSlot = childBounds.min
+        if (childBounds.max > maxSlot) maxSlot = childBounds.max
+      }
+
+      resolvingSubtree.delete(frame.blockId)
+      subtreeBoundsByBlockId.set(frame.blockId, { min: minSlot, max: maxSlot })
     }
 
-    resolvingSubtree.add(blockId)
+    const bounds = subtreeBoundsByBlockId.get(startBlockId)
+    if (bounds) return bounds
 
-    let minSlot = ownSlot
-    let maxSlot = ownSlot
-    for (const childId of childrenMap.get(blockId) ?? []) {
-      if (!blockMap.has(childId)) continue
-      const childBounds = getSubtreeBounds(childId)
-      if (childBounds.min < minSlot) minSlot = childBounds.min
-      if (childBounds.max > maxSlot) maxSlot = childBounds.max
-    }
-
-    resolvingSubtree.delete(blockId)
-    const bounds = { min: minSlot, max: maxSlot }
-    subtreeBoundsByBlockId.set(blockId, bounds)
-    return bounds
+    const ownSlot = slotById.get(startBlockId) ?? 0
+    return { min: ownSlot, max: ownSlot }
   }
 
   return (blockId: number): number => {
