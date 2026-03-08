@@ -52,7 +52,7 @@ function ReachabilityBadge({ reachable }: { reachable: boolean }) {
     <Badge
       variant={reachable ? 'secondary' : 'destructive'}
       className={[
-        'ml-auto inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold',
+        'inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold',
         reachable
           ? 'border-success/40 bg-success/12 text-success'
           : 'border-destructive/40 bg-destructive/12 text-destructive',
@@ -155,19 +155,24 @@ export function ActiveNodeInfoCard({ network, nodes }: { network: Network; nodes
               aria-label={`Node ${node.name}`}
             >
               <CardHeader className="gap-1 px-3 pt-2.5 pb-0">
-                <div className="flex flex-wrap items-start gap-2">
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-2">
                   <div className="min-w-0 flex-1">
-                    <CardTitle className="truncate text-[13px] tracking-tight" title={node.name}>
+                    <CardTitle
+                      className="text-[13px] leading-snug tracking-tight whitespace-normal break-words [overflow-wrap:anywhere]"
+                      title={node.name}
+                    >
                       {node.name}
                     </CardTitle>
                     <p
-                      className="mt-0.5 hidden truncate text-xs font-medium text-muted-foreground md:block"
+                      className="mt-0.5 text-xs leading-snug font-medium text-muted-foreground whitespace-normal break-words [overflow-wrap:anywhere]"
                       title={node.description}
                     >
                       {node.description || 'No description'}
                     </p>
                   </div>
-                  <ReachabilityBadge reachable={node.reachable} />
+                  <div className="justify-self-start sm:justify-self-end">
+                    <ReachabilityBadge reachable={node.reachable} />
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5">
