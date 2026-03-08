@@ -105,6 +105,10 @@ async fn main() -> Result<(), MainError> {
 
     let app = Router::new()
         .route("/api/{network_id}/data.json", get(api::data_response))
+        .route(
+            "/api/{network_id}/p2p-state.json",
+            get(api::p2p_state_response),
+        )
         .route("/api/networks.json", get(api::networks_response))
         .route("/api/cache-changes", get(api::cache_changes_sse))
         .route("/api/{network_id}/mine-block", post(api::mine_block))

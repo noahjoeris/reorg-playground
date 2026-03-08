@@ -58,6 +58,7 @@ export type NodeInfo = {
   name: string
   description: string
   implementation: string
+  supports_controls: boolean
   tips: TipInfo[]
   last_changed_timestamp: number
   version: string

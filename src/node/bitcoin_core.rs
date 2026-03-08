@@ -309,7 +309,12 @@ impl Node for BitcoinCoreNode {
             .await
     }
 
-    async fn set_network_active(&self, active: bool) -> Result<(), FetchError> {
+    async fn p2p_network_active(&self) -> Result<bool, FetchError> {
+        self.with_rpc(|rpc| rpc.get_network_info().map(|info| info.network_active))
+            .await
+    }
+
+    async fn set_p2p_network_active(&self, active: bool) -> Result<(), FetchError> {
         self.with_rpc(move |rpc| rpc.set_network_active(active))
             .await?;
         Ok(())

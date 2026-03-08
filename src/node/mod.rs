@@ -20,6 +20,10 @@ pub use electrum::Electrum;
 pub use esplora::Esplora;
 pub use types::{HeaderLocator, NodeInfo};
 
+fn is_regtest_or_signet(network: BitcoinNetwork) -> bool {
+    matches!(network, BitcoinNetwork::Regtest | BitcoinNetwork::Signet)
+}
+
 /// Backend interface for fetching active-chain headers in batches usually via REST API.
 #[async_trait]
 pub(crate) trait ActiveHeadersBatchProvider: Send + Sync {
@@ -35,6 +39,12 @@ pub(crate) trait ActiveHeadersBatchProvider: Send + Sync {
 pub trait Node: Send + Sync {
     fn info(&self) -> &NodeInfo;
     fn endpoint(&self) -> &str;
+
+    fn supports_controls(&self, disable_node_controls: bool) -> bool {
+        !disable_node_controls
+            && self.info().implementation == "Bitcoin Core"
+            && is_regtest_or_signet(self.info().network_type)
+    }
 
     async fn version(&self) -> Result<String, FetchError>;
     /// Fetches a header by hash or by height, depending on the provided locator.
@@ -66,11 +76,19 @@ pub trait Node: Send + Sync {
         })
     }
 
-    /// Toggles P2P network activity when supported by the backend.
-    async fn set_network_active(&self, _active: bool) -> Result<(), FetchError> {
+    /// Returns whether P2P networking is currently active when supported by the backend.
+    async fn p2p_network_active(&self) -> Result<bool, FetchError> {
         Err(FetchError::NotSupported {
             node: self.info().implementation.clone(),
-            operation: "set_network_active",
+            operation: "p2p_network_active",
+        })
+    }
+
+    /// Toggles P2P network activity when supported by the backend.
+    async fn set_p2p_network_active(&self, _active: bool) -> Result<(), FetchError> {
+        Err(FetchError::NotSupported {
+            node: self.info().implementation.clone(),
+            operation: "set_p2p_network_active",
         })
     }
 }

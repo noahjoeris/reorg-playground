@@ -131,6 +131,15 @@ export function ActiveNodeInfoCard({ network, nodes }: { network: Network; nodes
           const isP2PConnectionActive = getNodeP2PConnectionActive(node.id)
           const p2pConnectionLoading = p2pConnectionLoadingByNodeId[node.id] ?? false
           const p2pConnectionError = p2pConnectionErrorByNodeId[node.id]
+          const p2pStatusUnknown = isP2PConnectionActive == null
+          let p2pButtonLabel = 'Enable P2P'
+          if (p2pConnectionLoading) {
+            p2pButtonLabel = 'Updating...'
+          } else if (p2pStatusUnknown) {
+            p2pButtonLabel = 'Checking...'
+          } else if (isP2PConnectionActive) {
+            p2pButtonLabel = 'Disable P2P'
+          }
 
           return (
             <Card
@@ -213,13 +222,9 @@ export function ActiveNodeInfoCard({ network, nodes }: { network: Network; nodes
                             size="xs"
                             className="w-full rounded-full"
                             onClick={() => void toggleNodeP2PConnection(node)}
-                            disabled={p2pConnectionLoading}
+                            disabled={p2pConnectionLoading || p2pStatusUnknown}
                           >
-                            {p2pConnectionLoading
-                              ? 'Updating...'
-                              : isP2PConnectionActive
-                                ? 'Disable P2P'
-                                : 'Enable P2P'}
+                            {p2pButtonLabel}
                           </Button>
                         </span>
                       </TooltipTrigger>

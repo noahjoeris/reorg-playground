@@ -4,9 +4,8 @@ import useSWRMutation from 'swr/mutation'
 import { mineBlock } from '../services/miningService'
 import { getNetworkSnapshotKey } from '../services/swrKeys'
 import type { MineBlockResponse, Network, NodeInfo } from '../types'
-import { isRegtestOrSignet } from '../utils'
 
-type MineControlNode = Pick<NodeInfo, 'id' | 'implementation'>
+type MineControlNode = Pick<NodeInfo, 'id' | 'supports_controls'>
 type IsEnabledByNodeId = Record<number, boolean>
 type MineBlockMutationArgs = {
   networkId: number
@@ -16,11 +15,7 @@ type MineBlockMutationArgs = {
 
 const MINE_BLOCK_MUTATION_KEY = 'mine-block'
 
-function supportsNodeMining(node: Pick<NodeInfo, 'implementation'>): boolean {
-  return node.implementation === 'Bitcoin Core'
-}
-
-export function useMineBlock(network: Network | null, nodes: MineControlNode[] = []) {
+export function useMineBlock(network: Network, nodes: MineControlNode[] = []) {
   const [error, setError] = useState<string | null>(null)
   const { trigger: triggerMineBlock, isMutating } = useSWRMutation<
     MineBlockResponse,
@@ -34,22 +29,17 @@ export function useMineBlock(network: Network | null, nodes: MineControlNode[] =
     }
     return result
   })
-  const nodeControlsEnabled = isRegtestOrSignet(network) && !network?.disable_node_controls
   const isEnabledByNodeId = useMemo(() => {
     const map: IsEnabledByNodeId = {}
     for (const node of nodes) {
-      map[node.id] = nodeControlsEnabled && supportsNodeMining(node)
+      map[node.id] = node.supports_controls
     }
     return map
-  }, [nodes, nodeControlsEnabled])
+  }, [nodes])
   const isFeatureEnabled = Object.values(isEnabledByNodeId).some(Boolean)
 
   const mine = useCallback(
     async (node: MineControlNode, count?: number) => {
-      if (!network) {
-        setError('No network selected')
-        return
-      }
       if (!(isEnabledByNodeId[node.id] ?? false)) {
         setError('Mining control is disabled for this network')
         return

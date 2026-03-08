@@ -11,7 +11,6 @@ import {
   type TipStatus,
   type TipStatusEntry,
 } from './types'
-import { isRegtestOrSignet } from './utils'
 
 const H_GAP = 300
 const V_GAP = 160
@@ -645,7 +644,7 @@ function hasMineableActiveTip(block: ProcessedBlock, allNodes: NodeInfo[]): bool
   if (!activeTip) return false
 
   const activeTipNodeNames = new Set(activeTip.nodeNames)
-  return allNodes.some(node => node.implementation === 'Bitcoin Core' && activeTipNodeNames.has(node.name))
+  return allNodes.some(node => node.supports_controls && activeTipNodeNames.has(node.name))
 }
 
 function buildMineGraphElements(
@@ -659,7 +658,7 @@ function buildMineGraphElements(
   const mineNodes: MineTreeNodeType[] = []
   const mineEdges: Edge[] = []
 
-  if (!network || network.disable_node_controls || !isRegtestOrSignet(network)) {
+  if (!network) {
     return { mineNodes, mineEdges }
   }
 

@@ -152,6 +152,7 @@ pub struct NodeDataJson {
     pub name: String,
     pub description: String,
     pub implementation: String,
+    pub supports_controls: bool,
     pub tips: Vec<TipInfoJson>,
     pub last_changed_timestamp: u64,
     pub version: String,
@@ -161,6 +162,7 @@ pub struct NodeDataJson {
 impl NodeDataJson {
     pub fn new(
         info: NodeInfo,
+        supports_controls: bool,
         tips: &[ChainTip],
         version: String,
         last_changed_timestamp: u64,
@@ -171,6 +173,7 @@ impl NodeDataJson {
             name: info.name,
             description: info.description,
             implementation: info.implementation,
+            supports_controls,
             tips: tips.iter().map(TipInfoJson::new).collect(),
             last_changed_timestamp,
             version,

@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::{
@@ -8,7 +9,7 @@ use axum::{
     response::sse::{Event, KeepAlive, Sse},
 };
 use futures_util::StreamExt;
-use futures_util::future::ready;
+use futures_util::future::{join_all, ready};
 use futures_util::stream::Stream;
 use log::error;
 use serde::{Deserialize, Serialize};
@@ -56,6 +57,65 @@ pub async fn networks_response(State(state): State<AppState>) -> Json<NetworksJs
     Json(NetworksJsonResponse {
         networks: state.network_infos.clone(),
     })
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct NodeP2PState {
+    node_id: u32,
+    active: Option<bool>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct NodeP2PStateResponse {
+    nodes: Vec<NodeP2PState>,
+}
+
+async fn load_node_p2p_state(network_id: u32, node: Arc<dyn Node>) -> NodeP2PState {
+    let active = match node.p2p_network_active().await {
+        Ok(active) => Some(active),
+        Err(FetchError::NotSupported { .. }) => None,
+        Err(error) => {
+            error!(
+                "Could not fetch current p2p state from {} (endpoint={}) on network id={}: {}",
+                node.info(),
+                node.endpoint(),
+                network_id,
+                error
+            );
+            None
+        }
+    };
+
+    NodeP2PState {
+        node_id: node.info().id,
+        active,
+    }
+}
+
+pub async fn p2p_state_response(
+    Path(network_id): Path<u32>,
+    State(state): State<AppState>,
+) -> (StatusCode, Json<NodeP2PStateResponse>) {
+    let network = match get_network(&state, network_id) {
+        Some(network) => network,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(NodeP2PStateResponse { nodes: vec![] }),
+            );
+        }
+    };
+
+    let nodes = join_all(
+        network
+            .nodes
+            .iter()
+            .cloned()
+            .map(|node| load_node_p2p_state(network_id, node)),
+    )
+    .await;
+
+    (StatusCode::OK, Json(NodeP2PStateResponse { nodes }))
 }
 
 #[derive(Deserialize)]
@@ -269,7 +329,7 @@ pub async fn set_network_active(
         }
     };
 
-    match node.set_network_active(body.active).await {
+    match node.set_p2p_network_active(body.active).await {
         Ok(_) => (
             StatusCode::OK,
             Json(SetNetworkActiveResponse {
@@ -350,11 +410,20 @@ mod tests {
         ExecutionError,
     }
 
+    #[derive(Clone, Copy)]
+    enum P2PReadBehavior {
+        Available,
+        Unsupported,
+        Error,
+    }
+
     #[derive(Clone)]
     struct MockNode {
         info: NodeInfo,
         mine_behavior: ControlBehavior,
         network_behavior: ControlBehavior,
+        p2p_read_behavior: P2PReadBehavior,
+        p2p_state: Arc<Mutex<bool>>,
         mine_calls: Arc<Mutex<Vec<u64>>>,
         network_calls: Arc<Mutex<Vec<bool>>>,
     }
@@ -375,9 +444,21 @@ mod tests {
                 },
                 mine_behavior,
                 network_behavior,
+                p2p_read_behavior: P2PReadBehavior::Available,
+                p2p_state: Arc::new(Mutex::new(true)),
                 mine_calls: Arc::new(Mutex::new(Vec::new())),
                 network_calls: Arc::new(Mutex::new(Vec::new())),
             }
+        }
+
+        fn with_p2p_state(mut self, active: bool) -> Self {
+            self.p2p_state = Arc::new(Mutex::new(active));
+            self
+        }
+
+        fn with_p2p_read_behavior(mut self, p2p_read_behavior: P2PReadBehavior) -> Self {
+            self.p2p_read_behavior = p2p_read_behavior;
+            self
         }
     }
 
@@ -422,6 +503,19 @@ mod tests {
             Ok((vec![], vec![]))
         }
 
+        async fn p2p_network_active(&self) -> Result<bool, FetchError> {
+            match self.p2p_read_behavior {
+                P2PReadBehavior::Available => Ok(*self.p2p_state.lock().await),
+                P2PReadBehavior::Unsupported => Err(FetchError::NotSupported {
+                    node: "mock".to_string(),
+                    operation: "p2p_network_active",
+                }),
+                P2PReadBehavior::Error => Err(FetchError::BitcoinCoreREST(
+                    "mock p2p read failure".to_string(),
+                )),
+            }
+        }
+
         async fn mine_new_blocks(&self, count: u64) -> Result<Vec<BlockHash>, FetchError> {
             self.mine_calls.lock().await.push(count);
             match self.mine_behavior {
@@ -437,13 +531,16 @@ mod tests {
             }
         }
 
-        async fn set_network_active(&self, active: bool) -> Result<(), FetchError> {
+        async fn set_p2p_network_active(&self, active: bool) -> Result<(), FetchError> {
             self.network_calls.lock().await.push(active);
             match self.network_behavior {
-                ControlBehavior::Ok => Ok(()),
+                ControlBehavior::Ok => {
+                    *self.p2p_state.lock().await = active;
+                    Ok(())
+                }
                 ControlBehavior::NotSupported => Err(FetchError::NotSupported {
                     node: "mock".to_string(),
-                    operation: "set_network_active",
+                    operation: "set_p2p_network_active",
                 }),
                 ControlBehavior::DataError => Err(FetchError::DataError("bad input".to_string())),
                 ControlBehavior::ExecutionError => {
@@ -476,8 +573,45 @@ mod tests {
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
             disable_node_controls: false,
-            nodes: vec![Arc::new(node)],
+            nodes: vec![Arc::new(node) as Arc<dyn Node>],
         }]
+    }
+
+    fn network_with_nodes(
+        network_id: u32,
+        disable_node_controls: bool,
+        nodes: Vec<MockNode>,
+    ) -> Vec<Network> {
+        vec![Network {
+            id: network_id,
+            description: "test network".to_string(),
+            name: "test".to_string(),
+            query_interval: Duration::from_secs(15),
+            first_tracked_height: 0,
+            visible_heights_from_tip: 0,
+            extra_hotspot_heights: 0,
+            network_type: NetworkType::Regtest,
+            disable_node_controls,
+            nodes: nodes
+                .into_iter()
+                .map(|node| Arc::new(node) as Arc<dyn Node>)
+                .collect(),
+        }]
+    }
+
+    async fn p2p_state_for_network(state: &AppState, network_id: u32) -> NodeP2PStateResponse {
+        let (status, Json(body)) = p2p_state_response(Path(network_id), State(state.clone())).await;
+        assert_eq!(status, StatusCode::OK);
+        body
+    }
+
+    fn node_p2p_state(response: &NodeP2PStateResponse, node_id: u32) -> Option<bool> {
+        response
+            .nodes
+            .iter()
+            .find(|node| node.node_id == node_id)
+            .expect("node should exist in p2p response")
+            .active
     }
 
     #[tokio::test]
@@ -553,18 +687,7 @@ mod tests {
     #[tokio::test]
     async fn mine_block_feature_disabled_by_network_config() {
         let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok);
-        let state = test_state(vec![Network {
-            id: 1,
-            description: "test network".to_string(),
-            name: "test".to_string(),
-            query_interval: Duration::from_secs(15),
-            first_tracked_height: 0,
-            visible_heights_from_tip: 0,
-            extra_hotspot_heights: 0,
-            network_type: NetworkType::Regtest,
-            disable_node_controls: true,
-            nodes: vec![Arc::new(node.clone())],
-        }]);
+        let state = test_state(network_with_nodes(1, true, vec![node.clone()]));
 
         let (status, body) = mine_block(
             Path(1),
@@ -583,13 +706,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn p2p_state_response_returns_true_for_active_nodes() {
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok).with_p2p_state(true);
+        let state = test_state(single_node_network(1, node));
+
+        let response = p2p_state_for_network(&state, 1).await;
+        assert_eq!(node_p2p_state(&response, 7), Some(true));
+    }
+
+    #[tokio::test]
+    async fn p2p_state_response_returns_false_for_inactive_nodes() {
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok).with_p2p_state(false);
+        let state = test_state(single_node_network(1, node));
+
+        let response = p2p_state_for_network(&state, 1).await;
+        assert_eq!(node_p2p_state(&response, 7), Some(false));
+    }
+
+    #[tokio::test]
+    async fn p2p_state_response_returns_null_for_unsupported_nodes() {
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok)
+            .with_p2p_read_behavior(P2PReadBehavior::Unsupported);
+        let state = test_state(single_node_network(1, node));
+
+        let response = p2p_state_for_network(&state, 1).await;
+        assert_eq!(node_p2p_state(&response, 7), None);
+    }
+
+    #[tokio::test]
+    async fn p2p_state_response_degrades_single_node_failures_to_null() {
+        let active_node =
+            MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok).with_p2p_state(false);
+        let failing_node = MockNode::new(8, ControlBehavior::Ok, ControlBehavior::Ok)
+            .with_p2p_read_behavior(P2PReadBehavior::Error);
+        let state = test_state(network_with_nodes(
+            1,
+            false,
+            vec![active_node, failing_node],
+        ));
+
+        let response = p2p_state_for_network(&state, 1).await;
+        assert_eq!(node_p2p_state(&response, 7), Some(false));
+        assert_eq!(node_p2p_state(&response, 8), None);
+    }
+
+    #[tokio::test]
     async fn set_network_active_success_path() {
-        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok);
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok).with_p2p_state(true);
         let state = test_state(single_node_network(1, node.clone()));
 
         let (status, body) = set_network_active(
             Path(1),
-            State(state),
+            State(state.clone()),
             Json(SetNetworkActiveRequest {
                 node_id: 7,
                 active: false,
@@ -600,6 +768,8 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert!(body.0.success);
         assert_eq!(node.network_calls.lock().await.as_slice(), &[false]);
+        let response = p2p_state_for_network(&state, 1).await;
+        assert_eq!(node_p2p_state(&response, 7), Some(false));
     }
 
     #[tokio::test]
@@ -637,23 +807,12 @@ mod tests {
 
     #[tokio::test]
     async fn set_network_active_feature_disabled_by_network_config() {
-        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok);
-        let state = test_state(vec![Network {
-            id: 1,
-            description: "test network".to_string(),
-            name: "test".to_string(),
-            query_interval: Duration::from_secs(15),
-            first_tracked_height: 0,
-            visible_heights_from_tip: 0,
-            extra_hotspot_heights: 0,
-            network_type: NetworkType::Regtest,
-            disable_node_controls: true,
-            nodes: vec![Arc::new(node.clone())],
-        }]);
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok).with_p2p_state(true);
+        let state = test_state(network_with_nodes(1, true, vec![node.clone()]));
 
         let (status, body) = set_network_active(
             Path(1),
-            State(state),
+            State(state.clone()),
             Json(SetNetworkActiveRequest {
                 node_id: 7,
                 active: false,
@@ -668,6 +827,8 @@ mod tests {
             Some("NETWORK_CONTROL_FEATURE_DISABLED")
         );
         assert!(node.network_calls.lock().await.is_empty());
+        let response = p2p_state_for_network(&state, 1).await;
+        assert_eq!(node_p2p_state(&response, 7), Some(true));
     }
 
     #[tokio::test]
@@ -709,7 +870,8 @@ mod tests {
             7,
             ControlBehavior::NotSupported,
             ControlBehavior::NotSupported,
-        );
+        )
+        .with_p2p_state(true);
         let state = test_state(single_node_network(1, node));
 
         let (mine_status, mine_body) = mine_block(
@@ -729,7 +891,7 @@ mod tests {
 
         let (active_status, active_body) = set_network_active(
             Path(1),
-            State(state),
+            State(state.clone()),
             Json(SetNetworkActiveRequest {
                 node_id: 7,
                 active: true,
@@ -741,6 +903,8 @@ mod tests {
             active_body.0.error.as_deref(),
             Some("NETWORK_CONTROL_BACKEND_UNSUPPORTED")
         );
+        let response = p2p_state_for_network(&state, 1).await;
+        assert_eq!(node_p2p_state(&response, 7), Some(true));
     }
 
     #[tokio::test]
@@ -749,7 +913,8 @@ mod tests {
             7,
             ControlBehavior::ExecutionError,
             ControlBehavior::ExecutionError,
-        );
+        )
+        .with_p2p_state(true);
         let state = test_state(single_node_network(1, node));
 
         let (mine_status, mine_body) = mine_block(
