@@ -191,7 +191,7 @@ function App() {
   return (
     <TooltipProvider delayDuration={300}>
       <div className="relative isolate flex h-screen w-screen flex-col bg-background text-foreground">
-        <header className="px-2.5 pt-2 pb-1.5 sm:px-3.5 sm:pt-2.5 lg:px-5 lg:pt-3">
+        <header className="relative z-20 px-2.5 pt-2 pb-1.5 sm:px-3.5 sm:pt-2.5 lg:px-5 lg:pt-3">
           <div className={`${panelGlassStrongClass} rounded-2xl px-3 py-2 sm:px-4 sm:py-2.5`}>
             <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex min-w-0 items-center gap-2.5">
@@ -258,7 +258,7 @@ function App() {
         </header>
 
         {data && selectedNetwork !== null && !isNodePanelCollapsed && (
-          <div id="node-health-panel">
+          <div id="node-health-panel" className="relative z-0">
             <ActiveNodeInfoCard key={selectedNetwork.id} network={selectedNetwork} nodes={data.nodes} />
           </div>
         )}
