@@ -58,7 +58,7 @@ export function NodeSection({ network, nodes }: { network: Network; nodes: NodeI
                   </CardContent>
                 </Card>
               ) : (
-                <div className="flex flex-nowrap gap-2 overflow-x-auto overscroll-x-contain pb-1.5">
+                <div className="flex max-h-184 flex-wrap gap-2 overflow-y-auto pb-1.5">
                   {sortedNodes.map(node => (
                     <ActiveNodeCard
                       key={node.id}

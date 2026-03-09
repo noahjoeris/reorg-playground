@@ -59,7 +59,7 @@ export function BlockGraph({
   }, [])
 
   return (
-    <main className="relative min-h-0 flex-1 px-2 pb-2 sm:px-3 sm:pb-2">
+    <main className="relative min-h-128 flex-1 px-2 pb-2 sm:px-3 sm:pb-2">
       <div className="panel-glass relative h-full overflow-hidden rounded-2xl">
         {showConnectionWarning && (
           <div className="border-b border-warning/40 bg-warning/12 px-4 py-2 text-xs text-warning sm:px-6">

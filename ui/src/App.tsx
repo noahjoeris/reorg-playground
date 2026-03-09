@@ -159,7 +159,7 @@ function App() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="relative isolate flex h-screen w-screen flex-col bg-background text-foreground">
+      <div className="relative isolate flex h-screen w-screen flex-col overflow-y-auto bg-background text-foreground">
         <AppHeader
           networks={networks}
           selectedNetworkId={selectedNetworkId}
