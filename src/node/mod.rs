@@ -5,6 +5,7 @@ mod btcd;
 mod electrum;
 mod esplora;
 mod shared_fetch;
+mod signet_mining;
 mod types;
 
 use crate::error::FetchError;

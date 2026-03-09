@@ -1,4 +1,4 @@
-# reorg-playground docker configuration (mainnet/testnet/regtest/custom signet)
+# reorg-playground test-env configuration (bundled regtest/custom signet cluster)
 
 database_path = "/data/reorg.db"
 address = "0.0.0.0:2323"
@@ -92,18 +92,18 @@ disable_node_controls = false # Only affects node controls on Regtest/custom Sig
 [[networks]]
 id = 3
 name = "Signet"
-description = "Bitcoin Signet (dockerized custom pair)"
+description = "Bitcoin Signet (custom 3-node cluster)"
 query_interval = 1
 first_tracked_height = 0
 visible_heights_from_tip = 100
 extra_hotspot_heights = 20
 network_type = "Signet"
-disable_node_controls = false # App mining stays manual via docker compose run --rm signet-miner.
+disable_node_controls = false # Enables app controls for Signet mining and P2P toggling.
 
     [[networks.nodes]]
     id = 0
-    name = "Signet Node A"
-    description = "Docker Bitcoin Core node A (custom signet)"
+    name = "Signet Miner A"
+    description = "Signet node & miner"
     rpc_host = "bitcoind-signet-a"
     rpc_port = 38332
     rpc_user = "reorg-playground"
@@ -113,9 +113,20 @@ disable_node_controls = false # App mining stays manual via docker compose run -
 
     [[networks.nodes]]
     id = 1
-    name = "Signet Node B"
-    description = "Docker Bitcoin Core node B (custom signet)"
+    name = "Signet Miner B"
+    description = "Signet node & miner"
     rpc_host = "bitcoind-signet-b"
+    rpc_port = 38332
+    rpc_user = "reorg-playground"
+    rpc_password = "reorg-playground"
+    use_rest = false
+    client_implementation = "bitcoincore"
+
+    [[networks.nodes]]
+    id = 2
+    name = "Signet Observer C"
+    description = "Signet node"
+    rpc_host = "bitcoind-signet-c"
     rpc_port = 38332
     rpc_user = "reorg-playground"
     rpc_password = "reorg-playground"

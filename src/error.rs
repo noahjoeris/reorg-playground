@@ -10,6 +10,7 @@ pub enum FetchError {
     TokioJoin(tokio::task::JoinError),
     BitcoinCoreRPC(bitcoincore_rpc::Error),
     BitcoinCoreREST(String),
+    Command(String),
     BtcdRPC(JsonRPCError),
     EsploraREST(EsploraRESTError),
     MinReq(minreq::Error),
@@ -26,6 +27,7 @@ impl fmt::Display for FetchError {
         match self {
             FetchError::TokioJoin(e) => write!(f, "TokioJoin Error: {:?}", e),
             FetchError::BitcoinCoreRPC(e) => write!(f, "Bitcoin Core RPC Error: {}", e),
+            FetchError::Command(e) => write!(f, "Command execution error: {}", e),
             FetchError::BtcdRPC(e) => write!(f, "btcd Error: {}", e),
             FetchError::BitcoinCoreREST(e) => write!(f, "Bitcoin Core REST Error: {}", e),
             FetchError::EsploraREST(e) => write!(f, "Esplora REST Error: {}", e),
@@ -48,6 +50,7 @@ impl error::Error for FetchError {
         match *self {
             FetchError::TokioJoin(ref e) => Some(e),
             FetchError::BitcoinCoreRPC(ref e) => Some(e),
+            FetchError::Command(_) => None,
             FetchError::BtcdRPC(ref e) => Some(e),
             FetchError::EsploraREST(ref e) => Some(e),
             FetchError::BitcoinCoreREST(_) => None,

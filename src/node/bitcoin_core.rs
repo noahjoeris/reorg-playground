@@ -1,5 +1,6 @@
 use crate::error::FetchError;
 use crate::node::shared_fetch;
+use crate::node::signet_mining;
 use crate::node::{ActiveHeadersBatchProvider, HeaderLocator, Node, NodeInfo};
 use crate::types::{ChainTip, HeaderInfo, Tree};
 use async_trait::async_trait;
@@ -12,7 +13,7 @@ use bitcoincore_rpc::{Auth, Client, RpcApi};
 use log::debug;
 use tokio::task;
 
-const MINER_WALLET: &str = "miner";
+pub(super) const MINER_WALLET: &str = "miner";
 
 #[derive(Hash, Clone)]
 pub struct BitcoinCoreNode {
@@ -75,7 +76,7 @@ impl BitcoinCoreNode {
         }
     }
 
-    async fn with_rpc<T, F>(&self, op: F) -> Result<T, FetchError>
+    pub(super) async fn with_rpc<T, F>(&self, op: F) -> Result<T, FetchError>
     where
         T: Send + 'static,
         F: FnOnce(Client) -> Result<T, bitcoincore_rpc::Error> + Send + 'static,
@@ -85,7 +86,7 @@ impl BitcoinCoreNode {
         result.map_err(FetchError::from)
     }
 
-    async fn with_wallet_rpc<T, F>(&self, wallet: &str, op: F) -> Result<T, FetchError>
+    pub(super) async fn with_wallet_rpc<T, F>(&self, wallet: &str, op: F) -> Result<T, FetchError>
     where
         T: Send + 'static,
         F: FnOnce(Client) -> Result<T, bitcoincore_rpc::Error> + Send + 'static,
@@ -95,14 +96,14 @@ impl BitcoinCoreNode {
         result.map_err(FetchError::from)
     }
 
-    fn not_supported(&self, operation: &'static str) -> FetchError {
+    pub(super) fn not_supported(&self, operation: &'static str) -> FetchError {
         FetchError::NotSupported {
             node: self.info.implementation.clone(),
             operation,
         }
     }
 
-    async fn ensure_wallet_loaded(&self, wallet: &str) -> Result<(), FetchError> {
+    pub(super) async fn ensure_wallet_loaded(&self, wallet: &str) -> Result<(), FetchError> {
         let wallet_name = wallet.to_string();
         let loaded_wallets = self.with_rpc(|rpc| rpc.list_wallets()).await?;
         if loaded_wallets.iter().any(|w| w == &wallet_name) {
@@ -125,6 +126,18 @@ impl BitcoinCoreNode {
         })
         .await?;
         Ok(())
+    }
+
+    pub(super) fn node_name(&self) -> &str {
+        &self.info.name
+    }
+
+    pub(super) fn rpc_auth(&self) -> &Auth {
+        &self.rpc_auth
+    }
+
+    pub(super) fn rpc_endpoint(&self) -> &str {
+        &self.rpc_endpoint
     }
 }
 
@@ -296,8 +309,10 @@ impl Node for BitcoinCoreNode {
                 "mine_new_blocks requires count > 0".to_string(),
             ));
         }
-        if self.info.network_type != bitcoin::Network::Regtest {
-            return Err(self.not_supported("mine_new_blocks"));
+        match self.info.network_type {
+            bitcoin::Network::Regtest => {}
+            bitcoin::Network::Signet => return signet_mining::mine_blocks(self, count).await,
+            _ => return Err(self.not_supported("mine_new_blocks")),
         }
 
         self.ensure_wallet_loaded(MINER_WALLET).await?;
@@ -325,10 +340,10 @@ impl Node for BitcoinCoreNode {
 mod tests {
     use super::*;
 
-    fn test_node(network_type: bitcoin::Network) -> BitcoinCoreNode {
+    fn test_node(id: u32, network_type: bitcoin::Network) -> BitcoinCoreNode {
         BitcoinCoreNode::new(
             NodeInfo {
-                id: 1,
+                id,
                 name: "test".to_string(),
                 description: "test node".to_string(),
                 implementation: "Bitcoin Core".to_string(),
@@ -342,7 +357,7 @@ mod tests {
 
     #[tokio::test]
     async fn mine_new_blocks_rejects_zero_count() {
-        let node = test_node(bitcoin::Network::Regtest);
+        let node = test_node(1, bitcoin::Network::Regtest);
         let result = node.mine_new_blocks(0).await;
         assert!(matches!(result, Err(FetchError::DataError(_))));
     }

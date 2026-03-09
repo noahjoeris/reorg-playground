@@ -72,7 +72,7 @@ visible_heights_from_tip = 100
 extra_hotspot_heights = 20 
 network_type = "Regtest"
 disable_node_controls = false # Only affects node controls on Regtest/custom Signet.
-# Note: You can deploy two local regtest nodes via /scripts/start-regtest-pair.sh. Or just use the docker compose.
+# Note: You can deploy two local regtest nodes via scripts/start-regtest-nodes.sh, or use docker-compose.test-env.yml.
 
     [[networks.nodes]]
     id = 0
@@ -107,8 +107,8 @@ first_tracked_height = 0
 visible_heights_from_tip = 100
 extra_hotspot_heights = 20
 network_type = "Signet"
-disable_node_controls = false # P2P control works in-app; block production stays in scripts/run-signet-miner.sh.
-# Note: /scripts/start-signet-pair.sh boots Miner A, Miner B, and Observer C for the custom Signet cluster.
+disable_node_controls = false # Enables app controls for Signet mining and P2P toggling.
+# Note: scripts/start-signet-nodes.sh boots Miner A, Miner B, and Observer C for the custom Signet cluster, or use docker-compose.test-env.yml.
 
     [[networks.nodes]]
     id = 0

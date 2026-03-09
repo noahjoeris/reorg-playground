@@ -9,7 +9,7 @@ Reorg Playground is a Bitcoin tool for exploring forks, tip divergence, and reor
 
 In normal network conditions, deeper reorg events are uncommon. That makes it easy for fork/reorg edge cases in wallets, explorers, and other Bitcoin-integrated systems to slip through pre-production testing.
 
-With Reorg Playground, you can watch network state in near real time and deliberately produce blocks, isolate nodes, and create competing branches in development environments (Regtest today; custom Signet workflows next).
+With Reorg Playground, you can watch network state in near real time and deliberately produce blocks, isolate nodes, and create competing branches in development environments (Regtest and custom Signet).
 
 Inspired by [Fork Observer](https://github.com/0xb10c/fork-observer), but redesigned for interactive reorg experimentation.
 
@@ -17,29 +17,89 @@ Inspired by [Fork Observer](https://github.com/0xb10c/fork-observer), but redesi
 
 ## Getting Started
 
-You can explore the hosted view-only deployment at [https://reorgplayground.app](https://reorgplayground.app).
+You can explore the hosted view-only deployment at [https://reorgplayground.app](https://reorgplayground.app). Use it for observing live network state (Mainnet + Testnet), you cannot run mining workflows.
 
-For interactive Regtest workflows, run the project locally:
+### 1. App-Only Docker
 
-1. Clone the repo: `git clone https://github.com/noahjoeris/reorg-playground.git && cd reorg-playground`
-2. Start everything: `docker compose up -d --build`
+Use this when you want to deploy just the app and point it at your own nodes.
+
+1. Copy `config.toml.example` to `config.toml`, then adapt it for your nodes and RPC endpoints.
+2. Start the app stack: `docker compose up -d --build`
 3. Open the app: `http://localhost`
-4. Shutdown at anytime: `docker compose down`
+4. Stop it: `docker compose down`
 
-This Docker setup boots:
+This stack starts:
+- `backend`
+- `web`
+
+### 2. Test Environment Docker
+
+Use this when you want the bundled Regtest and custom Signet cluster for local experimentation.
+
+1. Start the full test environment:
+
+   ```bash
+   docker compose -f docker-compose.test-env.yml up -d --build
+   ```
+
+2. Open the app: `http://localhost`
+3. Stop it:
+
+   ```bash
+   docker compose -f docker-compose.test-env.yml down
+   ```
+
+4. Reset all test-env node volumes when needed:
+
+   ```bash
+   docker compose -f docker-compose.test-env.yml down -v
+   ```
+
+This stack starts:
+- `backend`
+- `web`
 - 2 connected Bitcoin Core Regtest nodes (`bitcoind-regtest-a`, `bitcoind-regtest-b`)
-- 1 backend service (Rust API)
-- 1 frontend service (served at `http://localhost`)
+- 3 Bitcoin Core custom Signet nodes: Miner A (`bitcoind-signet-a`), Miner B (`bitcoind-signet-b`), and Observer C (`bitcoind-signet-c`)
 
-The hosted deployment is meant for observing live network state. Use the local Docker setup when you want to create competing branches, mine blocks, or disconnect/reconnect nodes to force Regtest reorg scenarios.
+
+### 3. Host-Managed Regtest and Custom Signet
+
+If you want to run the Bitcoin Core nodes directly on the host instead of through Docker, use the scripts in `scripts/` and adapt the variables at the top of each script for your local environment first.
+
+For Regtest, start the 2-node setup with:
+
+```bash
+./scripts/start-regtest-nodes.sh
+./scripts/stop-regtest-nodes.sh
+```
+
+This setup starts two connected Bitcoin Core Regtest nodes, `Node A` and `Node B`.
+
+For custom Signet, start the 3-node setup using:
+
+```bash
+./scripts/start-signet-nodes.sh
+./scripts/run-signet-miner.sh a 1 # mines 1 block on node A
+./scripts/stop-signet-nodes.sh
+```
+
+This setup starts:
+- `Miner A`
+- `Miner B`
+- `Observer C`
+
+`Miner A` and `Miner B` share a fixed 1-of-2 Signet challenge, so either miner can produce blocks independently with the upstream `contrib/signet/miner` flow. `Observer C` does not have a signer descriptor and is intentionally non-mining.
+
+Host-managed Signet mining defaults to `./bitcoin-core/contrib/signet/miner`. Override it with `BITCOIN_CORE_SIGNET_MINER=/path/to/contrib/signet/miner` when needed.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 
 ## Features
 
 - Interactive block-header graph with forks/tips and collapse/expand behavior for dense sections.
 - Multi-backend node observation (Bitcoin Core, Electrum, Esplora, btcd) via RPC/REST.
-- Node controls for Bitcoin Core (mine block, enable/disable P2P), configurable per network via `disable_node_controls`.
+- Node controls for Bitcoin Core (Regtest mining, Regtest/custom Signet P2P toggle), configurable per network via `disable_node_controls`.
 - Config-driven network/node setup through `config.toml`.
 - Header data collection and persistence in SQLite.
 - Modern, responsive UI for exploring forks and node state.
@@ -62,17 +122,9 @@ The hosted deployment is meant for observing live network state. Use the local D
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Known Limitations
-- Node interactions are currently supported only for Bitcoin Core on Regtest; controls can be disabled per network via `disable_node_controls`.
-- Backend node data collection still relies on per-network polling (`query_interval`), while frontend updates are pushed via SSE invalidation + snapshot refresh.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-## Next Steps
-
-- [ ] `Support custom Signet for node interactions`
-- [ ] `Improve frontend-backend-node communication`
-- [ ] `Explore and enable more RPC calls and combinations`
-- [ ] `Improve UI polish and resolve known issues`
+- App-triggered mining is currently supported only for Bitcoin Core (on Regtest and custom Signet); other backends remain read-only for mining.
+- P2P toggling works for Bitcoin Core on Regtest and custom Signet; controls can still be disabled per network via `disable_node_controls`.
+- Backend node data collection still relies on per-network polling (via config param `query_interval`), while frontend updates are pushed via SSE invalidation + snapshot refresh.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

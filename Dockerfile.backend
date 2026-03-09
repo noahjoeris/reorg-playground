@@ -1,3 +1,5 @@
+ARG BITCOIN_VERSION=30.2
+
 FROM rust:1-bookworm AS builder
 
 WORKDIR /app
@@ -11,21 +13,45 @@ COPY src ./src
 
 RUN cargo build --release
 
-FROM debian:bookworm-slim AS runtime
+FROM debian:bookworm-slim AS bitcoin-source
+ARG BITCOIN_VERSION
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt
+
+# Download Bitcoin Core source code for signet miner script
+RUN curl -fsSL "https://github.com/bitcoin/bitcoin/archive/refs/tags/v${BITCOIN_VERSION}.tar.gz" \
+    | tar -xz \
+    && mv "bitcoin-${BITCOIN_VERSION}" bitcoin-src
+
+FROM bitcoin/bitcoin:${BITCOIN_VERSION} AS runtime
+ARG BITCOIN_VERSION
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends bash ca-certificates jq python3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY --from=builder /app/target/release/reorg-playground /usr/local/bin/reorg-playground
+COPY --from=bitcoin-source /opt/bitcoin-src/contrib/signet /app/bitcoin-src/contrib/signet
+COPY --from=bitcoin-source /opt/bitcoin-src/test/functional/test_framework /app/bitcoin-src/test/functional/test_framework
+COPY scripts/setup-signet-test-env.sh /app/scripts/setup-signet-test-env.sh
 
-RUN mkdir -p /app/config /data
+RUN ln -sf /opt/bitcoin-${BITCOIN_VERSION}/bin/bitcoin-cli /usr/local/bin/bitcoin-cli \
+    && ln -sf /opt/bitcoin-${BITCOIN_VERSION}/bin/bitcoin-util /usr/local/bin/bitcoin-util \
+    && chmod +x /app/bitcoin-src/contrib/signet/miner \
+    && chmod +x /app/scripts/setup-signet-test-env.sh \
+    && mkdir -p /app/config /data
 
-COPY config.docker.toml /app/config/config.toml
+COPY config.toml /app/config/config.toml
 
 ENV CONFIG_FILE=/app/config/config.toml
+ENV BITCOIN_CORE_SIGNET_MINER=/app/bitcoin-src/contrib/signet/miner
+ENV BITCOIN_CORE_TEST_FRAMEWORK=/app/bitcoin-src/test/functional/test_framework
 ENV RUST_LOG=info
 
 EXPOSE 2323

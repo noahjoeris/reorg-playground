@@ -1,0 +1,222 @@
+# Standalone local test environment with bundled Regtest and custom Signet nodes.
+x-bitcoin-image: &bitcoin_image bitcoin/bitcoin:30.2
+x-bitcoin-version: &bitcoin_version "30.2"
+
+services:
+  bitcoind-regtest-a:
+    image: *bitcoin_image
+    restart: unless-stopped
+    command:
+      - -regtest
+      - -server=1
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=reorg-playground
+      - -rpcpassword=reorg-playground
+      - -rpcport=18443
+      - -port=18444
+      - -addnode=bitcoind-regtest-b:18444
+      - -datadir=/home/bitcoin/.bitcoin
+    volumes:
+      - bitcoind_regtest_a_data:/home/bitcoin/.bitcoin
+    healthcheck:
+      test:
+        - CMD
+        - bitcoin-cli
+        - -regtest
+        - -rpcconnect=127.0.0.1
+        - -rpcport=18443
+        - -rpcuser=reorg-playground
+        - -rpcpassword=reorg-playground
+        - getblockchaininfo
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  bitcoind-regtest-b:
+    image: *bitcoin_image
+    restart: unless-stopped
+    command:
+      - -regtest
+      - -server=1
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=reorg-playground
+      - -rpcpassword=reorg-playground
+      - -rpcport=18443
+      - -port=18444
+      - -datadir=/home/bitcoin/.bitcoin
+    volumes:
+      - bitcoind_regtest_b_data:/home/bitcoin/.bitcoin
+    healthcheck:
+      test:
+        - CMD
+        - bitcoin-cli
+        - -regtest
+        - -rpcconnect=127.0.0.1
+        - -rpcport=18443
+        - -rpcuser=reorg-playground
+        - -rpcpassword=reorg-playground
+        - getblockchaininfo
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  bitcoind-signet-a:
+    image: *bitcoin_image
+    restart: unless-stopped
+    command:
+      - -signet
+      - -signetchallenge=5121031b14827738eaf41b67f50a2ddd9d0b08907236f3d0e79bef7fc9ea7b866a3ca821036739e2fc3681d2ef7f9afc0bb2f8964c4f61b6c30f4642cc0322e57967d31f3652ae
+      - -server=1
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=reorg-playground
+      - -rpcpassword=reorg-playground
+      - -rpcport=38332
+      - -port=38333
+      - -dnsseed=0
+      - -fixedseeds=0
+      - -addnode=bitcoind-signet-c:38333
+      - -datadir=/home/bitcoin/.bitcoin
+    volumes:
+      - bitcoind_signet_cluster_a_data:/home/bitcoin/.bitcoin
+    healthcheck:
+      test:
+        - CMD
+        - bitcoin-cli
+        - -signet
+        - -signetchallenge=5121031b14827738eaf41b67f50a2ddd9d0b08907236f3d0e79bef7fc9ea7b866a3ca821036739e2fc3681d2ef7f9afc0bb2f8964c4f61b6c30f4642cc0322e57967d31f3652ae
+        - -rpcconnect=127.0.0.1
+        - -rpcport=38332
+        - -rpcuser=reorg-playground
+        - -rpcpassword=reorg-playground
+        - getblockchaininfo
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  bitcoind-signet-b:
+    image: *bitcoin_image
+    restart: unless-stopped
+    command:
+      - -signet
+      - -signetchallenge=5121031b14827738eaf41b67f50a2ddd9d0b08907236f3d0e79bef7fc9ea7b866a3ca821036739e2fc3681d2ef7f9afc0bb2f8964c4f61b6c30f4642cc0322e57967d31f3652ae
+      - -server=1
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=reorg-playground
+      - -rpcpassword=reorg-playground
+      - -rpcport=38332
+      - -port=38333
+      - -dnsseed=0
+      - -fixedseeds=0
+      - -addnode=bitcoind-signet-c:38333
+      - -datadir=/home/bitcoin/.bitcoin
+    volumes:
+      - bitcoind_signet_cluster_b_data:/home/bitcoin/.bitcoin
+    healthcheck:
+      test:
+        - CMD
+        - bitcoin-cli
+        - -signet
+        - -signetchallenge=5121031b14827738eaf41b67f50a2ddd9d0b08907236f3d0e79bef7fc9ea7b866a3ca821036739e2fc3681d2ef7f9afc0bb2f8964c4f61b6c30f4642cc0322e57967d31f3652ae
+        - -rpcconnect=127.0.0.1
+        - -rpcport=38332
+        - -rpcuser=reorg-playground
+        - -rpcpassword=reorg-playground
+        - getblockchaininfo
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  bitcoind-signet-c:
+    image: *bitcoin_image
+    restart: unless-stopped
+    command:
+      - -signet
+      - -signetchallenge=5121031b14827738eaf41b67f50a2ddd9d0b08907236f3d0e79bef7fc9ea7b866a3ca821036739e2fc3681d2ef7f9afc0bb2f8964c4f61b6c30f4642cc0322e57967d31f3652ae
+      - -server=1
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=reorg-playground
+      - -rpcpassword=reorg-playground
+      - -rpcport=38332
+      - -port=38333
+      - -dnsseed=0
+      - -fixedseeds=0
+      - -datadir=/home/bitcoin/.bitcoin
+    volumes:
+      - bitcoind_signet_cluster_c_data:/home/bitcoin/.bitcoin
+    healthcheck:
+      test:
+        - CMD
+        - bitcoin-cli
+        - -signet
+        - -signetchallenge=5121031b14827738eaf41b67f50a2ddd9d0b08907236f3d0e79bef7fc9ea7b866a3ca821036739e2fc3681d2ef7f9afc0bb2f8964c4f61b6c30f4642cc0322e57967d31f3652ae
+        - -rpcconnect=127.0.0.1
+        - -rpcport=38332
+        - -rpcuser=reorg-playground
+        - -rpcpassword=reorg-playground
+        - getblockchaininfo
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      args:
+        BITCOIN_VERSION: *bitcoin_version
+    restart: unless-stopped
+    depends_on:
+      bitcoind-regtest-a:
+        condition: service_healthy
+      bitcoind-regtest-b:
+        condition: service_healthy
+      bitcoind-signet-a:
+        condition: service_healthy
+      bitcoind-signet-b:
+        condition: service_healthy
+      bitcoind-signet-c:
+        condition: service_healthy
+    environment:
+      CONFIG_FILE: /app/config/test-env.toml
+      RUST_LOG: info
+      SIGNET_NODE_A_RPC_HOST: bitcoind-signet-a
+      SIGNET_NODE_A_RPC_PORT: "38332"
+      SIGNET_NODE_B_RPC_HOST: bitcoind-signet-b
+      SIGNET_NODE_B_RPC_PORT: "38332"
+    expose:
+      - "2323"
+    command:
+      - /bin/bash
+      - -lc
+      - /app/scripts/setup-signet-test-env.sh && exec reorg-playground
+    volumes:
+      - app_db:/data
+      - ./config.test-env.toml:/app/config/test-env.toml:ro
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
+volumes:
+  app_db:
+  bitcoind_regtest_a_data:
+  bitcoind_regtest_b_data:
+  bitcoind_signet_cluster_a_data:
+  bitcoind_signet_cluster_b_data:
+  bitcoind_signet_cluster_c_data:
