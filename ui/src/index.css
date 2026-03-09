@@ -135,3 +135,13 @@ body {
   background: var(--surface-canvas);
   color: var(--foreground);
 }
+
+.panel-glass {
+  background: var(--surface-panel);
+  @apply border border-border/70 shadow-(--elevation-soft) backdrop-blur-md;
+}
+
+.panel-glass-strong {
+  background: var(--surface-panel-strong);
+  @apply border border-accent/25 shadow-(--elevation-lift) backdrop-blur-md;
+}

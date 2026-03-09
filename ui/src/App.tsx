@@ -1,31 +1,13 @@
-import { Controls, MiniMap, type Node, Panel, ReactFlow } from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useNetworkData } from '@/hooks/useNetworkData'
 import { useNetworks } from '@/hooks/useNetworks'
 import { useTheme } from '@/hooks/useTheme'
-import { ActiveNodeInfoCard } from './ActiveNodeCard'
+import { AppHeader } from './AppHeader'
 import { BlockDetailPanel } from './BlockDetailPanel'
-import { BlockTreeNode } from './BlockTreeNode'
-import { ConnectionStatus } from './ConnectionStatus'
-import { FoldedBlockTreeNode } from './FoldedBlockTreeNode'
-import { MineTreeNode } from './MineTreeNode'
-import { NetworkSelector } from './NetworkSelector'
-import { ThemeToggle } from './ThemeToggle'
+import { BlockGraph } from './BlockGraph'
+import { NodeSection } from './NodeSection'
 import { buildReactFlowGraph, type FlowNodeType, type FoldMetadata, preprocessData } from './tree'
-import { TIP_STATUS_COLORS, type TipStatusEntry } from './types'
-
-const nodeTypes = { block: BlockTreeNode, mine: MineTreeNode, folded: FoldedBlockTreeNode }
-const panelGlassClass =
-  '[background:var(--surface-panel)] border border-border/70 shadow-[var(--elevation-soft)] backdrop-blur-[10px]'
-const panelGlassStrongClass =
-  '[background:var(--surface-panel-strong)] border border-accent/25 shadow-[var(--elevation-lift)] backdrop-blur-[12px]'
-const metricPillClass = 'rounded-full border border-border/80 bg-card/70 px-2.5 py-[3px] text-[11px] tracking-[0.02em]'
-const REPO_URL = 'https://github.com/noahjoeris/reorg-playground'
 
 const EMPTY_FOLD_META: FoldMetadata = {
   potentialFoldedSegmentCount: 0,
@@ -48,28 +30,11 @@ function setNetworkIdInUrl(id: number) {
   window.history.replaceState({}, '', url.toString())
 }
 
-function CenteredState({ title, message }: { title: string; message: string }) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-      <div className={`${panelGlassStrongClass} max-w-lg rounded-2xl px-6 py-7`}>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Network State</p>
-        <h2 className="mt-2 text-lg font-semibold text-foreground">{title}</h2>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{message}</p>
-      </div>
-    </div>
-  )
-}
-
-function MetricsDivider() {
-  return <Separator orientation="vertical" className="h-3.5 bg-border/70" />
-}
-
 function App() {
   const { networks, loading: networksLoading, error: networksError } = useNetworks()
   const { preference: themePreference, cycle: cycleTheme } = useTheme()
   const [selectedNetworkId, setSelectedNetworkId] = useState<number | null>(getNetworkIdFromUrl)
   const [selectedBlockId, setSelectedBlockId] = useState<number | null>(null)
-  const [isNodePanelCollapsed, setIsNodePanelCollapsed] = useState(false)
   const [globalCollapsed, setGlobalCollapsed] = useState(true)
 
   useEffect(() => {
@@ -137,22 +102,10 @@ function App() {
     }
   }, [selectedBlockId, foldMeta.hiddenBlockIds])
 
-  const minimapNodeColor = useCallback((node: Node) => {
-    if (node.type === 'block') {
-      const statuses = (node.data as { tipStatuses?: TipStatusEntry[] }).tipStatuses
-      if (statuses && statuses.length > 0) {
-        return TIP_STATUS_COLORS[statuses[0].status]
-      }
-    }
-    if (node.type === 'mine') return 'var(--accent)'
-    if (node.type === 'folded') return 'var(--muted-foreground)'
-    return 'var(--foreground)'
-  }, [])
-
   if (networksLoading) {
     return (
       <div className="relative isolate flex h-screen items-center justify-center bg-background px-6 text-center">
-        <div className={`${panelGlassStrongClass} rounded-2xl px-6 py-5`}>
+        <div className="panel-glass-strong rounded-2xl px-6 py-5">
           <p className="text-sm text-muted-foreground">Loading network configuration...</p>
         </div>
       </div>
@@ -162,9 +115,7 @@ function App() {
   if (networksError) {
     return (
       <div className="relative isolate flex h-screen items-center justify-center bg-background px-6">
-        <div
-          className={`${panelGlassStrongClass} max-w-lg rounded-2xl border-destructive/35 bg-destructive/10 p-5 text-sm text-destructive`}
-        >
+        <div className="panel-glass-strong max-w-lg rounded-2xl border-destructive/35 bg-destructive/10 p-5 text-sm text-destructive">
           Could not load network list: {networksError}
         </div>
       </div>
@@ -174,174 +125,68 @@ function App() {
   if (networks.length === 0) {
     return (
       <div className="relative isolate flex h-screen items-center justify-center bg-background px-6">
-        <div className={`${panelGlassStrongClass} max-w-lg rounded-2xl p-5 text-sm text-muted-foreground`}>
+        <div className="panel-glass-strong max-w-lg rounded-2xl p-5 text-sm text-muted-foreground">
           No networks configured.
         </div>
       </div>
     )
   }
 
-  const hasNoBlocks = Boolean(data && processedBlocks.length === 0)
-  const showConnectionWarning = connectionStatus === 'error' || connectionStatus === 'closed'
   const totalNodes = data?.nodes.length ?? 0
   const reachableNodes = data?.nodes.filter(node => node.reachable).length ?? 0
-  const showNodePanelToggle = Boolean(data)
-  const showFoldToggle = foldMeta.potentialFoldedSegmentCount > 0
+
+  function getEmptyState(): { title: string; message: string } | null {
+    if (selectedNetworkId === null) {
+      return { title: 'Select a network', message: 'Choose a configured network to load blockchain data.' }
+    }
+    if (dataLoading && !data) {
+      return { title: 'Loading chain data', message: 'Fetching latest tips and headers from configured nodes.' }
+    }
+    if (dataError && !data) {
+      return { title: 'Failed to load chain data', message: dataError }
+    }
+    if (data && processedBlocks.length === 0) {
+      return {
+        title: 'No blocks to render',
+        message:
+          'The selected network has no tracked headers yet. Wait for synchronization or lower first tracked height.',
+      }
+    }
+    return null
+  }
+
+  const emptyState = getEmptyState()
 
   return (
     <TooltipProvider delayDuration={300}>
       <div className="relative isolate flex h-screen w-screen flex-col bg-background text-foreground">
-        <header className="relative z-20 px-2.5 pt-2 pb-1.5 sm:px-3.5 sm:pt-2.5 lg:px-5 lg:pt-3">
-          <div className={`${panelGlassStrongClass} rounded-2xl px-3 py-2 sm:px-4 sm:py-2.5`}>
-            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <Avatar className="size-16 sm:size-16">
-                  <AvatarImage src="/logo.webp" alt="Reorg Playground logo" className="object-cover" />
-                  <AvatarFallback className="rounded-lg">RP</AvatarFallback>
-                </Avatar>
-                <div>
-                  <h1 className="[font-family:var(--font-display)] text-lg font-semibold tracking-[0.02em] text-foreground sm:text-xl">
-                    Reorg Playground
-                  </h1>
-                  <p className="mt-0.5 hidden max-w-2xl text-xs leading-relaxed text-muted-foreground sm:block">
-                    Watch how nodes perceive forks, tips, and reorg events in real time.
-                  </p>
-                </div>
-              </div>
+        <AppHeader
+          networks={networks}
+          selectedNetworkId={selectedNetworkId}
+          onNetworkChange={handleNetworkChange}
+          themePreference={themePreference}
+          onCycleTheme={cycleTheme}
+          blockCount={processedBlocks.length}
+          reachableNodes={reachableNodes}
+          totalNodes={totalNodes}
+          connectionStatus={connectionStatus}
+        />
 
-              <div className="flex shrink-0 items-center gap-2">
-                <NetworkSelector networks={networks} selectedId={selectedNetworkId} onChange={handleNetworkChange} />
-                <ThemeToggle preference={themePreference} onToggle={cycleTheme} />
-                <Button asChild variant="ghost" size="icon-sm">
-                  <a
-                    href={REPO_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="Open GitHub repository"
-                    title="Open GitHub repository"
-                  >
-                    <img src="/icons/github.svg" alt="" className="size-4 dark:invert" />
-                  </a>
-                </Button>
-              </div>
-            </div>
-
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-              <span className={metricPillClass}>
-                <span>{processedBlocks.length.toLocaleString()}</span> blocks
-              </span>
-              <MetricsDivider />
-              <span className={metricPillClass}>
-                {reachableNodes}/{totalNodes} nodes reachable
-              </span>
-              <MetricsDivider />
-              <ConnectionStatus status={connectionStatus} />
-              {showNodePanelToggle && (
-                <>
-                  <MetricsDivider />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="xs"
-                    className="rounded-full"
-                    onClick={() => setIsNodePanelCollapsed(current => !current)}
-                    aria-controls="node-health-panel"
-                    aria-expanded={!isNodePanelCollapsed}
-                    aria-label={isNodePanelCollapsed ? 'Show node panel' : 'Hide node panel'}
-                  >
-                    {isNodePanelCollapsed ? 'Show Nodes' : 'Hide Nodes'}
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-        </header>
-
-        {data && selectedNetwork !== null && !isNodePanelCollapsed && (
-          <div id="node-health-panel" className="relative z-0">
-            <ActiveNodeInfoCard key={selectedNetwork.id} network={selectedNetwork} nodes={data.nodes} />
-          </div>
+        {data && selectedNetwork !== null && (
+          <NodeSection key={selectedNetwork.id} network={selectedNetwork} nodes={data.nodes} />
         )}
 
-        <main className="relative min-h-0 flex-1 px-2 pb-2 sm:px-3 sm:pb-2">
-          <div className={`${panelGlassClass} relative h-full overflow-hidden rounded-2xl`}>
-            {showConnectionWarning && (
-              <div className="border-b border-warning/40 bg-warning/12 px-4 py-2 text-xs text-warning sm:px-6">
-                Live updates are currently degraded ({connectionStatus}). Displayed data may be stale.
-              </div>
-            )}
-
-            {dataError && data && (
-              <div className="border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-xs text-destructive sm:px-6">
-                Could not refresh latest data: {dataError}
-              </div>
-            )}
-
-            <div className="h-full">
-              {selectedNetworkId === null ? (
-                <CenteredState
-                  title="Select a network"
-                  message="Choose a configured network to load blockchain data."
-                />
-              ) : dataLoading && !data ? (
-                <CenteredState
-                  title="Loading chain data"
-                  message="Fetching latest tips and headers from configured nodes."
-                />
-              ) : dataError && !data ? (
-                <CenteredState title="Failed to load chain data" message={dataError} />
-              ) : hasNoBlocks ? (
-                <CenteredState
-                  title="No blocks to render"
-                  message="The selected network has no tracked headers yet. Wait for synchronization or lower first tracked height."
-                />
-              ) : (
-                <ReactFlow
-                  className="bg-transparent"
-                  colorMode={themePreference}
-                  nodes={nodes}
-                  edges={edges}
-                  nodeTypes={nodeTypes}
-                  nodesDraggable={false}
-                  nodesConnectable={false}
-                  fitView
-                  fitViewOptions={{ padding: 0.25, duration: 200 }}
-                  minZoom={0.1}
-                  maxZoom={1.4}
-                  onlyRenderVisibleElements
-                  proOptions={{ hideAttribution: true }}
-                >
-                  {/* <Legend /> */}
-                  <MiniMap
-                    pannable
-                    nodeColor={minimapNodeColor}
-                    nodeStrokeColor="var(--accent)"
-                    bgColor="var(--muted)"
-                    inversePan
-                    maskColor="color-mix(in srgb, var(--muted) 50%, transparent)"
-                    className="hidden rounded-2xl border border-border md:block"
-                  />
-                  <Controls showInteractive={false} showZoom={false} />
-                  {showFoldToggle && (
-                    <Panel position="top-right" className="m-2">
-                      <Button
-                        type="button"
-                        size="xs"
-                        variant="outline"
-                        className="rounded-full border-border/80 bg-card/90 px-3 font-semibold backdrop-blur"
-                        onClick={() => setGlobalCollapsed(current => !current)}
-                        aria-label={globalCollapsed ? 'Expand all folded blocks' : 'Collapse uninteresting blocks'}
-                        title={globalCollapsed ? 'Expand all' : 'Collapse all'}
-                      >
-                        {globalCollapsed ? 'Expand all' : 'Collapse all'}
-                      </Button>
-                    </Panel>
-                  )}
-                </ReactFlow>
-              )}
-            </div>
-          </div>
-        </main>
+        <BlockGraph
+          nodes={nodes}
+          edges={edges}
+          themePreference={themePreference}
+          connectionStatus={connectionStatus}
+          staleError={dataError && data ? dataError : null}
+          emptyState={emptyState}
+          showFoldToggle={foldMeta.potentialFoldedSegmentCount > 0}
+          globalCollapsed={globalCollapsed}
+          onToggleGlobalCollapsed={() => setGlobalCollapsed(c => !c)}
+        />
 
         {selectedBlock && !foldMeta.hiddenBlockIds.has(selectedBlockId!) && (
           <BlockDetailPanel block={selectedBlock} onClose={() => setSelectedBlockId(null)} />
