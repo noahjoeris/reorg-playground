@@ -47,8 +47,6 @@ RUN ln -sf /opt/bitcoin-${BITCOIN_VERSION}/bin/bitcoin-cli /usr/local/bin/bitcoi
     && chmod +x /app/scripts/setup-signet-test-env.sh \
     && mkdir -p /app/config /data
 
-COPY config.toml /app/config/config.toml
-
 ENV CONFIG_FILE=/app/config/config.toml
 ENV BITCOIN_CORE_SIGNET_MINER=/app/bitcoin-src/contrib/signet/miner
 ENV BITCOIN_CORE_TEST_FRAMEWORK=/app/bitcoin-src/test/functional/test_framework
