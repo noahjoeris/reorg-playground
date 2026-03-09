@@ -101,19 +101,19 @@ disable_node_controls = false # Only affects node controls on Regtest/custom Sig
 [[networks]]
 id = 3
 name = "Signet"
-description = "Bitcoin Signet (local custom pair)"
+description = "Bitcoin Signet (local custom 3-node cluster)"
 query_interval = 1
 first_tracked_height = 0
 visible_heights_from_tip = 100
 extra_hotspot_heights = 20
 network_type = "Signet"
 disable_node_controls = false # P2P control works in-app; block production stays in scripts/run-signet-miner.sh.
-# Note: You can deploy two local signet nodes via /scripts/start-signet-pair.sh and mine via /scripts/run-signet-miner.sh.
+# Note: /scripts/start-signet-pair.sh boots Miner A, Miner B, and Observer C for the custom Signet cluster.
 
     [[networks.nodes]]
     id = 0
-    name = "Node A"
-    description = "Local Bitcoin Core node (custom signet)"
+    name = "Miner A"
+    description = "Local Bitcoin Core node A (custom Signet miner)"
     rpc_host = "127.0.0.1"
     rpc_port = 38332
     # rpc_cookie_file = ""
@@ -124,10 +124,22 @@ disable_node_controls = false # P2P control works in-app; block production stays
 
     [[networks.nodes]]
     id = 1
-    name = "Node B"
-    description = "Local Bitcoin Core node (custom signet)"
+    name = "Miner B"
+    description = "Local Bitcoin Core node B (custom Signet miner)"
     rpc_host = "127.0.0.1"
     rpc_port = 39332
+    # rpc_cookie_file = ""
+    rpc_user = "reorg-playground"
+    rpc_password = "reorg-playground"
+    use_rest = false
+    client_implementation = "bitcoincore"
+
+    [[networks.nodes]]
+    id = 2
+    name = "Observer C"
+    description = "Local Bitcoin Core node C (custom Signet observer)"
+    rpc_host = "127.0.0.1"
+    rpc_port = 40332
     # rpc_cookie_file = ""
     rpc_user = "reorg-playground"
     rpc_password = "reorg-playground"
