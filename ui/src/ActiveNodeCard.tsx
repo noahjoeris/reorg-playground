@@ -109,11 +109,9 @@ export function ActiveNodeCard({ node, maxHeight, p2p }: { node: NodeInfo; maxHe
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
-            <CardDescription className="truncate text-xs font-medium">
-              {node.description || 'No description'}
-            </CardDescription>
+            <CardDescription className="truncate text-xs font-medium">{node.description}</CardDescription>
           </TooltipTrigger>
-          <TooltipContent side="top">{node.description || 'No description'}</TooltipContent>
+          <TooltipContent side="top">{node.description}</TooltipContent>
         </Tooltip>
 
         <div className="flex flex-wrap items-center gap-1">
