@@ -107,9 +107,14 @@ export function ActiveNodeCard({ node, maxHeight, p2p }: { node: NodeInfo; maxHe
           </CardTitle>
           <ReachabilityBadge reachable={node.reachable} />
         </div>
-        <CardDescription className="truncate text-xs font-medium" title={node.description || 'No description'}>
-          {node.description || 'No description'}
-        </CardDescription>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <CardDescription className="truncate text-xs font-medium">
+              {node.description || 'No description'}
+            </CardDescription>
+          </TooltipTrigger>
+          <TooltipContent side="top">{node.description || 'No description'}</TooltipContent>
+        </Tooltip>
 
         <div className="flex flex-wrap items-center gap-1">
           <Badge variant="outline" className={compactBadgeClass}>
