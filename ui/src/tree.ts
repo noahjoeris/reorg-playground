@@ -265,6 +265,66 @@ type MineGraphElements = {
   mineEdges: Edge[]
 }
 
+/**
+ * Compacts the slot layout so vertical span is proportional to the number of
+ * branches visible at each height rather than total leaf count.
+ *
+ * Forward pass: each child targets its parent's slot; pushed down only on
+ * collision with a sibling at the same height.
+ * Backward pass: centers each parent between its children.
+ */
+function compactSlots(
+  originalSlots: ReadonlyMap<number, number>,
+  blocks: ProcessedBlock[],
+  childrenMap: ReadonlyMap<number, number[]>,
+): Map<number, number> {
+  const blocksByHeight = new Map<number, ProcessedBlock[]>()
+  for (const block of blocks) {
+    if (!blocksByHeight.has(block.height)) blocksByHeight.set(block.height, [])
+    blocksByHeight.get(block.height)!.push(block)
+  }
+  const heights = [...blocksByHeight.keys()].sort((a, b) => a - b)
+
+  const newSlot = new Map<number, number>()
+
+  // Forward pass: children target their parent's slot, push down on collision
+  for (const height of heights) {
+    const atHeight = blocksByHeight.get(height)!
+    atHeight.sort((a, b) => (originalSlots.get(a.id) ?? 0) - (originalSlots.get(b.id) ?? 0))
+
+    for (let i = 0; i < atHeight.length; i++) {
+      const block = atHeight[i]
+      let target = 0
+      if (block.prev_id !== MAX_PREV_ID && newSlot.has(block.prev_id)) {
+        target = newSlot.get(block.prev_id)!
+      }
+      const minSlot = i > 0 ? newSlot.get(atHeight[i - 1].id)! + 1 : -Infinity
+      newSlot.set(block.id, Math.max(target, minSlot))
+    }
+  }
+
+  // Backward pass: center parents between their children
+  for (let h = heights.length - 1; h >= 0; h--) {
+    const atHeight = blocksByHeight.get(heights[h])!
+    atHeight.sort((a, b) => (newSlot.get(a.id) ?? 0) - (newSlot.get(b.id) ?? 0))
+
+    for (let i = 0; i < atHeight.length; i++) {
+      const block = atHeight[i]
+      const childIds = (childrenMap.get(block.id) ?? []).filter(id => newSlot.has(id))
+      if (childIds.length === 0) continue
+
+      const childSlots = childIds.map(id => newSlot.get(id)!)
+      const center = (Math.min(...childSlots) + Math.max(...childSlots)) / 2
+
+      const lo = i > 0 ? newSlot.get(atHeight[i - 1].id)! + 1 : -Infinity
+      const hi = i < atHeight.length - 1 ? newSlot.get(atHeight[i + 1].id)! - 1 : Infinity
+      newSlot.set(block.id, Math.max(lo, Math.min(hi, center)))
+    }
+  }
+
+  return newSlot
+}
+
 function buildBlockMap(blocks: ProcessedBlock[]): Map<number, ProcessedBlock> {
   const blockMap = new Map<number, ProcessedBlock>()
   for (const block of blocks) {
@@ -711,7 +771,7 @@ export function buildReactFlowGraph(
 ): { nodes: FlowNodeType[]; edges: Edge[]; foldMeta: FoldMetadata } {
   const blockMap = buildBlockMap(blocks)
   const childrenMap = buildChildrenMap(blocks, blockMap)
-  const slotByBlockId = createSlotLayout(blocks, blockMap, childrenMap)
+  const slotByBlockId = compactSlots(createSlotLayout(blocks, blockMap, childrenMap), blocks, childrenMap)
   const resolveNextMineSlot = createNextMineSlotResolver(slotByBlockId, childrenMap, blockMap)
   const foldSegments = computeFoldSegments(blocks, blockMap, childrenMap)
   const collapsedSegments = globalCollapsed ? foldSegments : []
