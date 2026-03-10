@@ -13,7 +13,10 @@ With Reorg Playground, you can watch network state in near real time and deliber
 
 Inspired by [Fork Observer](https://github.com/0xb10c/fork-observer), but redesigned for interactive reorg experimentation.
 
-![Reorg Playground UI](screenshot.webp)
+
+https://github.com/user-attachments/assets/91d0be1a-e59d-48bb-bac0-21a36322d443
+
+
 
 ## Getting Started
 
