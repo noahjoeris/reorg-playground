@@ -11,7 +11,6 @@ In normal network conditions, deeper reorg events are uncommon. That makes it ea
 
 With Reorg Playground, you can watch network state in near real time and deliberately produce blocks, isolate nodes, and create competing branches in development environments (Regtest and custom Signet).
 
-Inspired by [Fork Observer](https://github.com/0xb10c/fork-observer), but redesigned for interactive reorg experimentation.
 
 
 https://github.com/user-attachments/assets/91d0be1a-e59d-48bb-bac0-21a36322d443
@@ -154,6 +153,6 @@ Frontend:
 
 ## Acknowledgement
 
-This project is inspired by [fork-observer](https://github.com/0xb10c/fork-observer) by [0xB10C](https://github.com/0xb10c), and reuses many ideas/components adapted for Reorg Playground's goals.
+This project is inspired by [fork-observer](https://github.com/0xb10c/fork-observer) by [0xB10C](https://github.com/0xb10c), but redesigned for interactive reorg experimentation.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
