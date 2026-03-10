@@ -186,11 +186,12 @@ async fn next_block_time(node: &BitcoinCoreNode) -> Result<u64, FetchError> {
     }
 
     let now = unix_timestamp_now()?;
-    if template.min_time >= now {
-        sleep(Duration::from_secs(template.min_time - now + 1)).await;
+    let block_time = select_block_time(template.min_time, now);
+    if block_time > now {
+        sleep(Duration::from_secs(block_time - now)).await;
     }
 
-    Ok(template.min_time)
+    Ok(block_time)
 }
 
 fn unix_timestamp_now() -> Result<u64, FetchError> {
@@ -198,6 +199,10 @@ fn unix_timestamp_now() -> Result<u64, FetchError> {
         .duration_since(UNIX_EPOCH)
         .map_err(|error| command_error(format!("System clock error: {}", error)))?
         .as_secs())
+}
+
+fn select_block_time(min_time: u64, now: u64) -> u64 {
+    if min_time > now { min_time } else { now }
 }
 
 fn env_path(name: &str, default: &str) -> PathBuf {
@@ -283,6 +288,16 @@ fn shell_escape(arg: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn select_block_time_uses_current_time_when_chain_time_is_stale() {
+        assert_eq!(select_block_time(1_598_918_402, 1_778_000_000), 1_778_000_000);
+    }
+
+    #[test]
+    fn select_block_time_waits_for_future_min_time() {
+        assert_eq!(select_block_time(1_778_000_100, 1_778_000_000), 1_778_000_100);
+    }
 
     #[test]
     fn shell_escape_quotes_special_characters() {

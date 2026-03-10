@@ -79,6 +79,7 @@ services:
       - -port=38333
       - -dnsseed=0
       - -fixedseeds=0
+      - -addnode=bitcoind-signet-b:38333
       - -addnode=bitcoind-signet-c:38333
       - -datadir=/home/bitcoin/.bitcoin
     volumes:
@@ -114,6 +115,7 @@ services:
       - -port=38333
       - -dnsseed=0
       - -fixedseeds=0
+      - -addnode=bitcoind-signet-a:38333
       - -addnode=bitcoind-signet-c:38333
       - -datadir=/home/bitcoin/.bitcoin
     volumes:
@@ -149,6 +151,8 @@ services:
       - -port=38333
       - -dnsseed=0
       - -fixedseeds=0
+      - -addnode=bitcoind-signet-a:38333
+      - -addnode=bitcoind-signet-b:38333
       - -datadir=/home/bitcoin/.bitcoin
     volumes:
       - bitcoind_signet_cluster_c_data:/home/bitcoin/.bitcoin
