@@ -644,7 +644,7 @@ function hasMineableActiveTip(block: ProcessedBlock, allNodes: NodeInfo[]): bool
   if (!activeTip) return false
 
   const activeTipNodeNames = new Set(activeTip.nodeNames)
-  return allNodes.some(node => node.supports_controls && activeTipNodeNames.has(node.name))
+  return allNodes.some(node => node.supports_mining && activeTipNodeNames.has(node.name))
 }
 
 function buildMineGraphElements(

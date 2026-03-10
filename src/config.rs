@@ -111,13 +111,14 @@ struct TomlNode {
     rpc_password: Option<String>,
     use_rest: Option<bool>,
     client_implementation: String,
+    supports_mining: Option<bool>,
 }
 
 impl fmt::Display for TomlNode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Node (id={}, description='{}', name='{}', rpc_host='{}', rpc_port={}, rpc_user='{}', rpc_password='***', rpc_cookie_file={:?}, use_rest={}, client_implementation='{}')",
+            "Node (id={}, description='{}', name='{}', rpc_host='{}', rpc_port={}, rpc_user='{}', rpc_password='***', rpc_cookie_file={:?}, use_rest={}, client_implementation='{}', supports_mining={})",
             self.id,
             self.description,
             self.name,
@@ -127,6 +128,7 @@ impl fmt::Display for TomlNode {
             self.rpc_cookie_file,
             self.use_rest.unwrap_or(DEFAULT_USE_REST),
             self.client_implementation,
+            self.supports_mining.unwrap_or(true),
         )
     }
 }
@@ -289,6 +291,7 @@ fn parse_toml_node(
         description: toml_node.description.clone(),
         implementation: client_implementation.to_string(),
         network_type,
+        supports_mining: toml_node.supports_mining.unwrap_or(true),
     };
 
     match client_implementation {

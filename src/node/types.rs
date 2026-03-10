@@ -18,14 +18,15 @@ pub struct NodeInfo {
     pub description: String,
     pub implementation: String,
     pub network_type: BitcoinNetwork,
+    pub supports_mining: bool,
 }
 
 impl fmt::Display for NodeInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Node(id={}, name='{}', implementation='{}', network_type='{}')",
-            self.id, self.name, self.implementation, self.network_type
+            "Node(id={}, name='{}', implementation='{}', network_type='{}', supports_mining={})",
+            self.id, self.name, self.implementation, self.network_type, self.supports_mining
         )
     }
 }

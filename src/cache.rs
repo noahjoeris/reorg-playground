@@ -40,6 +40,7 @@ pub async fn populate_cache(network: &crate::config::Network, tree: &Tree, cache
                 NodeDataJson::new(
                     n.info().clone(),
                     n.supports_controls(network.disable_node_controls),
+                    n.supports_mining(network.disable_node_controls),
                     &[],
                     VERSION_UNKNOWN.to_string(),
                     0,
@@ -284,13 +285,14 @@ mod tests {
             description: "".to_string(),
             implementation: "".to_string(),
             network_type: BitcoinNetwork::Regtest,
+            supports_mining: true,
         };
         {
             let mut locked_caches = caches.lock().await;
             let mut node_data: NodeData = BTreeMap::new();
             node_data.insert(
                 node.id,
-                NodeDataJson::new(node.clone(), false, &[], "".to_string(), 0, true),
+                NodeDataJson::new(node.clone(), false, false, &[], "".to_string(), 0, true),
             );
             locked_caches.insert(
                 network_id,

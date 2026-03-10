@@ -47,6 +47,10 @@ pub trait Node: Send + Sync {
             && is_regtest_or_signet(self.info().network_type)
     }
 
+    fn supports_mining(&self, disable_node_controls: bool) -> bool {
+        self.supports_controls(disable_node_controls) && self.info().supports_mining
+    }
+
     async fn version(&self) -> Result<String, FetchError>;
     /// Fetches a header by hash or by height, depending on the provided locator.
     async fn block_header(&self, locator: HeaderLocator) -> Result<Header, FetchError>;

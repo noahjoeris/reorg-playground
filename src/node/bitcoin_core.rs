@@ -348,6 +348,7 @@ mod tests {
                 description: "test node".to_string(),
                 implementation: "Bitcoin Core".to_string(),
                 network_type,
+                supports_mining: true,
             },
             "127.0.0.1:18443".to_string(),
             Auth::UserPass("user".to_string(), "pass".to_string()),

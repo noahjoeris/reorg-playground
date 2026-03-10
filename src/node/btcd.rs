@@ -237,6 +237,7 @@ mod tests {
                 description: "test node".to_string(),
                 implementation: "btcd".to_string(),
                 network_type,
+                supports_mining: true,
             },
             "127.0.0.1:18334".to_string(),
             "user".to_string(),

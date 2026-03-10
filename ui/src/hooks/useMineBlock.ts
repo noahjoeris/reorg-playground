@@ -5,7 +5,7 @@ import { mineBlock } from '../services/miningService'
 import { getNetworkSnapshotKey } from '../services/swrKeys'
 import type { MineBlockResponse, Network, NodeInfo } from '../types'
 
-type MineControlNode = Pick<NodeInfo, 'id' | 'supports_controls'>
+type MineControlNode = Pick<NodeInfo, 'id' | 'supports_mining'>
 type IsEnabledByNodeId = Record<number, boolean>
 type MineBlockMutationArgs = {
   networkId: number
@@ -32,7 +32,7 @@ export function useMineBlock(network: Network, nodes: MineControlNode[] = []) {
   const isEnabledByNodeId = useMemo(() => {
     const map: IsEnabledByNodeId = {}
     for (const node of nodes) {
-      map[node.id] = node.supports_controls
+      map[node.id] = node.supports_mining
     }
     return map
   }, [nodes])

@@ -1,7 +1,11 @@
 # reorg-playground test-env configuration (bundled regtest/custom signet cluster)
 
-database_path = "/data/reorg.db"
-address = "0.0.0.0:2323"
+database_path = "/data/reorg.db" # Database path of the key value store. Will be created if non-existing.
+address = "0.0.0.0:2323" # Webserver listen address
+
+# RSS feeds need a URL of the site. This is optional. If unset,
+# the RSS feeds might not be valid according to the RSS 2.0 specification.
+# Some RSS readers might complain.
 rss_base_url = ""
 
 [[networks]]
@@ -9,10 +13,10 @@ id = 0
 name = "Mainnet"
 description = "Bitcoin Mainnet"
 query_interval = 15
-first_tracked_height = 937000
-visible_heights_from_tip = 500
-extra_hotspot_heights = 100
-network_type = "Mainnet"
+first_tracked_height = 937000 # lower bound; loads from this height to tip into the db
+visible_heights_from_tip = 500 # Base tip window size (heights counted backward from chain tip).
+extra_hotspot_heights = 100 # Additional hotspot heights (fork/tip anchors) kept outside the base tip window.
+network_type = "Mainnet" # Mainnet | Testnet | Signet | Regtest
 disable_node_controls = false # Only affects node controls on Regtest/custom Signet.
 
     [[networks.nodes]]
@@ -77,6 +81,7 @@ disable_node_controls = false # Only affects node controls on Regtest/custom Sig
     rpc_password = "reorg-playground"
     use_rest = false
     client_implementation = "bitcoincore"
+    supports_mining = true # Only has an effect on Regtest/Signet. On Signet, ensure the node has signing keys.
 
     [[networks.nodes]]
     id = 1
@@ -88,6 +93,7 @@ disable_node_controls = false # Only affects node controls on Regtest/custom Sig
     rpc_password = "reorg-playground"
     use_rest = false
     client_implementation = "bitcoincore"
+    supports_mining = true # Only has an effect on Regtest/Signet. On Signet, ensure the node has signing keys.
 
 [[networks]]
 id = 3
@@ -110,6 +116,7 @@ disable_node_controls = false # Enables app controls for Signet mining and P2P t
     rpc_password = "reorg-playground"
     use_rest = false
     client_implementation = "bitcoincore"
+    supports_mining = true # Only has an effect on Regtest/Signet. On Signet, ensure the node has signing keys.
 
     [[networks.nodes]]
     id = 1
@@ -121,6 +128,7 @@ disable_node_controls = false # Enables app controls for Signet mining and P2P t
     rpc_password = "reorg-playground"
     use_rest = false
     client_implementation = "bitcoincore"
+    supports_mining = true # Only has an effect on Regtest/Signet. On Signet, ensure the node has signing keys.
 
     [[networks.nodes]]
     id = 2
@@ -132,3 +140,4 @@ disable_node_controls = false # Enables app controls for Signet mining and P2P t
     rpc_password = "reorg-playground"
     use_rest = false
     client_implementation = "bitcoincore"
+    supports_mining = false # Only has an effect on Regtest/Signet. On Signet, ensure the node has signing keys.

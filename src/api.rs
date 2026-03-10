@@ -231,6 +231,15 @@ pub async fn mine_block(
             );
         }
     };
+    if !node.supports_mining(network.disable_node_controls) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(MineBlockResponse {
+                success: false,
+                error: Some("MINE_NODE_NOT_A_MINER".to_string()),
+            }),
+        );
+    }
 
     let count = body.count.unwrap_or(1);
     match node.mine_new_blocks(count).await {
@@ -439,8 +448,9 @@ mod tests {
                     id: node_id,
                     name: format!("mock-{}", node_id),
                     description: "mock node".to_string(),
-                    implementation: "mock".to_string(),
+                    implementation: "Bitcoin Core".to_string(),
                     network_type: bitcoin::Network::Regtest,
+                    supports_mining: true,
                 },
                 mine_behavior,
                 network_behavior,
@@ -449,6 +459,11 @@ mod tests {
                 mine_calls: Arc::new(Mutex::new(Vec::new())),
                 network_calls: Arc::new(Mutex::new(Vec::new())),
             }
+        }
+
+        fn with_supports_mining(mut self, supports_mining: bool) -> Self {
+            self.info.supports_mining = supports_mining;
+            self
         }
 
         fn with_p2p_state(mut self, active: bool) -> Self {
@@ -702,6 +717,28 @@ mod tests {
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(!body.0.success);
         assert_eq!(body.0.error.as_deref(), Some("MINE_FEATURE_DISABLED"));
+        assert!(node.mine_calls.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn mine_block_rejected_when_node_not_a_miner() {
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok)
+            .with_supports_mining(false);
+        let state = test_state(single_node_network(1, node.clone()));
+
+        let (status, body) = mine_block(
+            Path(1),
+            State(state),
+            Json(MineBlockRequest {
+                node_id: 7,
+                count: Some(1),
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(!body.0.success);
+        assert_eq!(body.0.error.as_deref(), Some("MINE_NODE_NOT_A_MINER"));
         assert!(node.mine_calls.lock().await.is_empty());
     }
 
