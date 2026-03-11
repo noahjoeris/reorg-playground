@@ -19,6 +19,10 @@ pub struct NodeInfo {
     pub implementation: String,
     pub network_type: BitcoinNetwork,
     pub supports_mining: bool,
+    /// Custom signet challenge script (hex). Set from the network config.
+    pub signet_challenge: Option<String>,
+    /// Custom signet mining difficulty target (hex). Set from the network config.
+    pub signet_nbits: Option<String>,
 }
 
 impl fmt::Display for NodeInfo {

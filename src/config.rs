@@ -64,6 +64,8 @@ struct TomlNetwork {
     network_type: NetworkType,
     #[serde(default)]
     disable_node_controls: bool,
+    signet_challenge: Option<String>,
+    signet_nbits: Option<String>,
     nodes: Vec<TomlNode>,
 }
 
@@ -78,6 +80,8 @@ pub struct Network {
     pub extra_hotspot_heights: usize,
     pub network_type: NetworkType,
     pub disable_node_controls: bool,
+    pub signet_challenge: Option<String>,
+    pub signet_nbits: Option<String>,
     pub nodes: Vec<Arc<dyn Node>>,
 }
 
@@ -205,7 +209,12 @@ fn parse_config(config_str: &str) -> Result<Config, ConfigError> {
         let mut node_ids: Vec<u32> = vec![];
 
         for toml_node in toml_network.nodes.iter() {
-            match parse_toml_node(toml_node, network_type) {
+            match parse_toml_node(
+                toml_node,
+                network_type,
+                &toml_network.signet_challenge,
+                &toml_network.signet_nbits,
+            ) {
                 Ok(node) => {
                     let node_id = node.info().id;
                     if node_ids.contains(&node_id) {
@@ -275,6 +284,8 @@ fn parse_toml_network(
         extra_hotspot_heights: toml_network.extra_hotspot_heights,
         network_type: toml_network.network_type.clone(),
         disable_node_controls: toml_network.disable_node_controls,
+        signet_challenge: toml_network.signet_challenge.clone(),
+        signet_nbits: toml_network.signet_nbits.clone(),
         nodes,
     })
 }
@@ -282,6 +293,8 @@ fn parse_toml_network(
 fn parse_toml_node(
     toml_node: &TomlNode,
     network_type: BitcoinNetwork,
+    signet_challenge: &Option<String>,
+    signet_nbits: &Option<String>,
 ) -> Result<Arc<dyn Node>, ConfigError> {
     let client_implementation = toml_node.client_implementation.parse::<Backend>()?;
 
@@ -292,6 +305,8 @@ fn parse_toml_node(
         implementation: client_implementation.to_string(),
         network_type,
         supports_mining: toml_node.supports_mining.unwrap_or(true),
+        signet_challenge: signet_challenge.clone(),
+        signet_nbits: signet_nbits.clone(),
     };
 
     match client_implementation {

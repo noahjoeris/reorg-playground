@@ -475,6 +475,8 @@ mod tests {
                     implementation: "mock".to_string(),
                     network_type: BitcoinNetwork::Regtest,
                     supports_mining: true,
+                    signet_challenge: None,
+                    signet_nbits: None,
                 },
                 endpoint: "mock://node".to_string(),
                 active_fetch_mode,

@@ -451,6 +451,8 @@ mod tests {
                     implementation: "Bitcoin Core".to_string(),
                     network_type: bitcoin::Network::Regtest,
                     supports_mining: true,
+                    signet_challenge: None,
+                    signet_nbits: None,
                 },
                 mine_behavior,
                 network_behavior,
@@ -588,6 +590,8 @@ mod tests {
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
             disable_node_controls: false,
+            signet_challenge: None,
+            signet_nbits: None,
             nodes: vec![Arc::new(node) as Arc<dyn Node>],
         }]
     }
@@ -607,6 +611,8 @@ mod tests {
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
             disable_node_controls,
+            signet_challenge: None,
+            signet_nbits: None,
             nodes: nodes
                 .into_iter()
                 .map(|node| Arc::new(node) as Arc<dyn Node>)
@@ -681,6 +687,8 @@ mod tests {
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
             disable_node_controls: false,
+            signet_challenge: None,
+            signet_nbits: None,
             nodes: vec![],
         }]);
 
@@ -821,6 +829,8 @@ mod tests {
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
             disable_node_controls: false,
+            signet_challenge: None,
+            signet_nbits: None,
             nodes: vec![],
         }]);
 

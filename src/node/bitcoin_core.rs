@@ -139,6 +139,11 @@ impl BitcoinCoreNode {
     pub(super) fn rpc_endpoint(&self) -> &str {
         &self.rpc_endpoint
     }
+
+    pub(super) fn node_info(&self) -> &NodeInfo {
+        &self.info
+    }
+
 }
 
 #[async_trait]
@@ -349,6 +354,8 @@ mod tests {
                 implementation: "Bitcoin Core".to_string(),
                 network_type,
                 supports_mining: true,
+                signet_challenge: None,
+                signet_nbits: None,
             },
             "127.0.0.1:18443".to_string(),
             Auth::UserPass("user".to_string(), "pass".to_string()),

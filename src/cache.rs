@@ -286,6 +286,8 @@ mod tests {
             implementation: "".to_string(),
             network_type: BitcoinNetwork::Regtest,
             supports_mining: true,
+            signet_challenge: None,
+            signet_nbits: None,
         };
         {
             let mut locked_caches = caches.lock().await;

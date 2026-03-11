@@ -25,10 +25,12 @@ const DEFAULT_BITCOIN_CLI_BIN: &str = "bitcoin-cli";
 const DEFAULT_BITCOIN_UTIL_BIN: &str = "bitcoin-util";
 const RPC_TIMEOUT_SECONDS: u64 = 10;
 
-const SIGNET_CHALLENGE: &str = "5121031b14827738eaf41b67f50a2ddd9d0b08907236f3d0e79bef7fc9ea7b866a3ca821036739e2fc3681d2ef7f9afc0bb2f8964c4f61b6c30f4642cc0322e57967d31f3652ae";
-const SIGNET_NBITS: &str = "1e0377ae";
-
 static SIGNET_MINING_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+struct SignetParams {
+    challenge: String,
+    nbits: String,
+}
 
 struct SignetRuntime {
     miner_script: PathBuf,
@@ -41,6 +43,23 @@ pub(super) async fn mine_blocks(
     node: &BitcoinCoreNode,
     count: u64,
 ) -> Result<Vec<BlockHash>, FetchError> {
+    let info = node.node_info();
+    let signet = SignetParams {
+        challenge: info
+            .signet_challenge
+            .as_deref()
+            .ok_or_else(|| {
+                FetchError::DataError("signet_challenge not configured for this network".into())
+            })?
+            .to_string(),
+        nbits: info
+            .signet_nbits
+            .as_deref()
+            .ok_or_else(|| {
+                FetchError::DataError("signet_nbits not configured for this network".into())
+            })?
+            .to_string(),
+    };
     let runtime = SignetRuntime::from_env()?;
 
     let _guard = SIGNET_MINING_LOCK.lock().await;
@@ -49,7 +68,7 @@ pub(super) async fn mine_blocks(
     let mut mined_blocks = Vec::with_capacity(count as usize);
     for _ in 0..count {
         let reward_address = next_reward_address(node).await?;
-        mined_blocks.push(mine_one_block(node, &runtime, &reward_address).await?);
+        mined_blocks.push(mine_one_block(node, &signet, &runtime, &reward_address).await?);
     }
 
     Ok(mined_blocks)
@@ -71,13 +90,17 @@ impl SignetRuntime {
         })
     }
 
-    fn cli_command(&self, node: &BitcoinCoreNode) -> Result<String, FetchError> {
+    fn cli_command(
+        &self,
+        node: &BitcoinCoreNode,
+        signet: &SignetParams,
+    ) -> Result<String, FetchError> {
         let (rpc_user, rpc_password) = node.rpc_auth().clone().get_user_pass()?;
         let (rpc_host, rpc_port) = rpc_host_and_port(node.rpc_endpoint())?;
 
         let mut args = vec![
             self.bitcoin_cli_bin.clone(),
-            format!("-signetchallenge={}", SIGNET_CHALLENGE),
+            format!("-signetchallenge={}", signet.challenge),
             format!("-rpcclienttimeout={}", RPC_TIMEOUT_SECONDS),
             format!("-rpcconnect={}", rpc_host),
             format!("-rpcport={}", rpc_port),
@@ -110,21 +133,22 @@ async fn next_reward_address(node: &BitcoinCoreNode) -> Result<String, FetchErro
 
 async fn mine_one_block(
     node: &BitcoinCoreNode,
+    signet: &SignetParams,
     runtime: &SignetRuntime,
     reward_address: &str,
 ) -> Result<BlockHash, FetchError> {
     let best_hash_before = node.with_rpc(|rpc| rpc.get_best_block_hash()).await?;
-    let block_time = next_block_time(node).await?;
+    let block_time = next_block_time(node, signet).await?;
 
     let output = Command::new(&runtime.python_bin)
         .arg(&runtime.miner_script)
-        .arg(format!("--cli={}", runtime.cli_command(node)?))
+        .arg(format!("--cli={}", runtime.cli_command(node, signet)?))
         .arg("--quiet")
         .arg("generate")
         .arg(format!("--set-block-time={}", block_time))
         .arg(format!("--grind-cmd={}", runtime.grind_command()))
         .arg(format!("--address={}", reward_address))
-        .arg(format!("--nbits={}", SIGNET_NBITS))
+        .arg(format!("--nbits={}", signet.nbits))
         .output()
         .await
         .map_err(|error| {
@@ -165,7 +189,7 @@ async fn mine_one_block(
     Ok(best_hash_after)
 }
 
-async fn next_block_time(node: &BitcoinCoreNode) -> Result<u64, FetchError> {
+async fn next_block_time(node: &BitcoinCoreNode, signet: &SignetParams) -> Result<u64, FetchError> {
     let template = node
         .with_rpc(|rpc| {
             rpc.get_block_template(
@@ -177,7 +201,7 @@ async fn next_block_time(node: &BitcoinCoreNode) -> Result<u64, FetchError> {
         .await?;
 
     let actual_challenge = hex_encode(template.signet_challenge.as_bytes());
-    if actual_challenge != SIGNET_CHALLENGE {
+    if actual_challenge != signet.challenge {
         return Err(FetchError::DataError(format!(
             "{} returned unexpected signet_challenge: {}",
             node.node_name(),

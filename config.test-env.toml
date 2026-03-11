@@ -104,7 +104,9 @@ first_tracked_height = 0
 visible_heights_from_tip = 100
 extra_hotspot_heights = 20
 network_type = "Signet"
-disable_node_controls = false # Enables app controls for Signet mining and P2P toggling.
+signet_challenge = "5121031b14827738eaf41b67f50a2ddd9d0b08907236f3d0e79bef7fc9ea7b866a3ca821036739e2fc3681d2ef7f9afc0bb2f8964c4f61b6c30f4642cc0322e57967d31f3652ae" # Custom signet challenge script (hex). Must match the bitcoind -signetchallenge.
+signet_nbits = "1e0377ae" # Custom signet mining difficulty target (hex). Passed to the signet miner.
+disable_node_controls = false # Enables app controls for Signet/Regtest mining and P2P toggling.
 
     [[networks.nodes]]
     id = 0

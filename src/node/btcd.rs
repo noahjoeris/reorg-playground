@@ -238,6 +238,8 @@ mod tests {
                 implementation: "btcd".to_string(),
                 network_type,
                 supports_mining: true,
+                signet_challenge: None,
+                signet_nbits: None,
             },
             "127.0.0.1:18334".to_string(),
             "user".to_string(),
