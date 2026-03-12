@@ -2,13 +2,20 @@ import { Handle, type Node, type NodeProps, Position } from '@xyflow/react'
 import { memo } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { TIP_STATUS_COLORS, TIP_STATUS_DESCRIPTIONS, TIP_STATUS_LABELS, type TipStatusEntry } from './types'
+import {
+  type NetworkType,
+  TIP_STATUS_COLORS,
+  TIP_STATUS_DESCRIPTIONS,
+  TIP_STATUS_LABELS,
+  type TipStatusEntry,
+} from './types'
 import { formatMinerLabel, shortHash } from './utils'
 
 type BlockTreeNodeData = {
   height: number
   hash: string
   miner: string
+  networkType: NetworkType
   tipStatuses: TipStatusEntry[]
   onBlockClick: () => void
 }
@@ -18,6 +25,7 @@ export type BlockTreeNodeType = Node<BlockTreeNodeData, 'block'>
 function BlockTreeNodeComponent({ data, selected }: NodeProps<BlockTreeNodeType>) {
   const truncatedHash = shortHash(data.hash, 10, 8)
   const minerLabel = formatMinerLabel(data.miner)
+  const showMinerLabel = data.networkType === 'Mainnet'
 
   return (
     <div className="group relative min-w-60 max-w-60">
@@ -57,9 +65,11 @@ function BlockTreeNodeComponent({ data, selected }: NodeProps<BlockTreeNodeType>
         <p className="mt-2 font-mono text-xs text-foreground" title={data.hash}>
           {truncatedHash}
         </p>
-        <p className="mt-1 truncate text-xs font-medium text-muted-foreground" title={minerLabel}>
-          {minerLabel}
-        </p>
+        {showMinerLabel && (
+          <p className="mt-1 truncate text-xs font-medium text-muted-foreground" title={minerLabel}>
+            {minerLabel}
+          </p>
+        )}
 
         {data.tipStatuses.length > 0 && (
           <ul

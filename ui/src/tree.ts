@@ -6,6 +6,7 @@ import {
   type DataResponse,
   MAX_PREV_ID,
   type Network,
+  type NetworkType,
   type NodeInfo,
   type ProcessedBlock,
   type TipStatus,
@@ -578,6 +579,7 @@ function buildBlockNodes(
   slotByBlockId: ReadonlyMap<number, number>,
   selectedBlockId: number | null,
   onBlockClick: (block: ProcessedBlock) => void,
+  networkType: NetworkType,
 ): BlockTreeNodeType[] {
   return visibleBlocks.map(block => {
     const depth = heightToDepth.get(block.height) ?? 0
@@ -594,6 +596,7 @@ function buildBlockNodes(
         height: block.height,
         hash: block.hash,
         miner: block.miner,
+        networkType,
         tipStatuses: block.tipStatuses,
         onBlockClick: () => onBlockClick(block),
       },
@@ -778,7 +781,8 @@ export function buildReactFlowGraph(
   const hiddenBlockIds = createHiddenBlockIdSet(collapsedSegments)
   const visibleBlocks = blocks.filter(block => !hiddenBlockIds.has(block.id))
   const { heightToDepth, foldToDepth } = createDepthLookup(visibleBlocks, collapsedSegments)
-  const blockNodes = buildBlockNodes(visibleBlocks, heightToDepth, slotByBlockId, selectedBlockId, onBlockClick)
+  const networkType: NetworkType = network?.network_type ?? 'Mainnet'
+  const blockNodes = buildBlockNodes(visibleBlocks, heightToDepth, slotByBlockId, selectedBlockId, onBlockClick, networkType)
   const foldedNodes = buildFoldedNodes(collapsedSegments, foldToDepth, slotByBlockId)
   const blockEdges = [
     ...buildVisibleBlockEdges(visibleBlocks, blockMap, hiddenBlockIds, selectedBlockId),
