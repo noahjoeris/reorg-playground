@@ -189,6 +189,12 @@ async fn mine_one_block(
     Ok(best_hash_after)
 }
 
+/// Determines the timestamp to use for the next signet block.
+///
+/// Fetches a block template from the node to obtain `min_time`, validates that
+/// the node's signet challenge matches the expected one, then selects an
+/// appropriate block time via [`select_block_time`]. If the chosen time is in
+/// the future, this function sleeps until that moment before returning.
 async fn next_block_time(node: &BitcoinCoreNode, signet: &SignetParams) -> Result<u64, FetchError> {
     let template = node
         .with_rpc(|rpc| {

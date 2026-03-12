@@ -107,7 +107,6 @@ export function BlockDetailPanel({ block, onClose }: { block: ProcessedBlock; on
               <FieldRow label="Timestamp" value={formatBlockTime(block.time)} />
               <FieldRow label="Miner" value={formatMinerLabel(block.miner)} />
               <FieldRow label="Difficulty" value={String(block.difficulty_int)} mono />
-              <FieldRow label="Node ID" value={String(block.id)} mono />
             </dl>
           </section>
 
