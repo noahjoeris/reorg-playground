@@ -1,6 +1,6 @@
-import { Controls, MiniMap, type Node, Panel, ReactFlow } from '@xyflow/react'
+import { Controls, MiniMap, type Node, type OnInit, Panel, type ReactFlowInstance, ReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import type { ThemePreference } from '@/hooks/useTheme'
 import { BlockTreeNode } from './BlockTreeNode'
@@ -46,6 +46,12 @@ export function BlockGraph({
 }) {
   const showConnectionWarning = connectionStatus === 'error' || connectionStatus === 'closed'
 
+  const fitViewOptions = useMemo(() => ({ padding: 0.25 }), [])
+
+  const onInit: OnInit = useCallback((instance: ReactFlowInstance) => {
+    instance.fitView(fitViewOptions)
+  }, [fitViewOptions])
+
   const minimapNodeColor = useCallback((node: Node) => {
     if (node.type === 'block') {
       const statuses = (node.data as { tipStatuses?: TipStatusEntry[] }).tipStatuses
@@ -85,8 +91,7 @@ export function BlockGraph({
               nodeTypes={nodeTypes}
               nodesDraggable={false}
               nodesConnectable={false}
-              fitView
-              fitViewOptions={{ padding: 0.25, duration: 200 }}
+              onInit={onInit}
               minZoom={0.1}
               maxZoom={1.4}
               onlyRenderVisibleElements
