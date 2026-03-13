@@ -13,10 +13,9 @@ import {
   type TipStatusEntry,
 } from './types'
 
-const H_GAP = 300
-const V_GAP = 160
-const BLOCK_NODE_HEIGHT = 144
-const FOLDED_NODE_HEIGHT = 96
+const H_GAP = 188
+const V_GAP = 172
+const NODE_HEIGHT = 64
 
 const TIP_STATUS_ORDER: Record<TipStatus, number> = {
   active: 0,
@@ -589,8 +588,8 @@ function buildBlockNodes(
       id: String(block.id),
       type: 'block',
       position: { x: depth * H_GAP, y: slot * V_GAP },
-      width: 240,
-      height: BLOCK_NODE_HEIGHT,
+      width: 128,
+      height: NODE_HEIGHT,
       selected: selectedBlockId === block.id,
       data: {
         height: block.height,
@@ -609,8 +608,6 @@ function buildFoldedNodes(
   foldToDepth: ReadonlyMap<string, number>,
   slotByBlockId: ReadonlyMap<number, number>,
 ): FoldedBlockTreeNodeType[] {
-  const foldedYOffset = (BLOCK_NODE_HEIGHT - FOLDED_NODE_HEIGHT) / 2
-
   return collapsedSegments.map(segment => {
     const depth = foldToDepth.get(segment.id) ?? 0
     const slot = slotByBlockId.get(segment.blockIds[0]) ?? 0
@@ -619,9 +616,9 @@ function buildFoldedNodes(
       id: `fold-${segment.id}`,
       type: 'folded',
       selectable: false,
-      position: { x: depth * H_GAP, y: slot * V_GAP + foldedYOffset },
-      width: 192,
-      height: FOLDED_NODE_HEIGHT,
+      position: { x: depth * H_GAP, y: slot * V_GAP },
+      width: 128,
+      height: NODE_HEIGHT,
       data: {
         startHeight: segment.startHeight,
         endHeight: segment.endHeight,
@@ -738,7 +735,7 @@ function buildMineGraphElements(
       type: 'mine',
       position: { x: (depth + 1) * H_GAP, y: mineSlot * V_GAP },
       width: 100,
-      height: BLOCK_NODE_HEIGHT,
+      height: NODE_HEIGHT,
       selected: highlightsSelected,
       data: {
         block,
@@ -782,7 +779,14 @@ export function buildReactFlowGraph(
   const visibleBlocks = blocks.filter(block => !hiddenBlockIds.has(block.id))
   const { heightToDepth, foldToDepth } = createDepthLookup(visibleBlocks, collapsedSegments)
   const networkType: NetworkType = network?.network_type ?? 'Mainnet'
-  const blockNodes = buildBlockNodes(visibleBlocks, heightToDepth, slotByBlockId, selectedBlockId, onBlockClick, networkType)
+  const blockNodes = buildBlockNodes(
+    visibleBlocks,
+    heightToDepth,
+    slotByBlockId,
+    selectedBlockId,
+    onBlockClick,
+    networkType,
+  )
   const foldedNodes = buildFoldedNodes(collapsedSegments, foldToDepth, slotByBlockId)
   const blockEdges = [
     ...buildVisibleBlockEdges(visibleBlocks, blockMap, hiddenBlockIds, selectedBlockId),

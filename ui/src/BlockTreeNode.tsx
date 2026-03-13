@@ -9,7 +9,7 @@ import {
   TIP_STATUS_LABELS,
   type TipStatusEntry,
 } from './types'
-import { formatMinerLabel, shortHash } from './utils'
+import { formatMinerLabel } from './utils'
 
 type BlockTreeNodeData = {
   height: number
@@ -23,17 +23,17 @@ type BlockTreeNodeData = {
 export type BlockTreeNodeType = Node<BlockTreeNodeData, 'block'>
 
 function BlockTreeNodeComponent({ data, selected }: NodeProps<BlockTreeNodeType>) {
-  const truncatedHash = shortHash(data.hash, 10, 8)
+  const truncatedHash = `…${data.hash.slice(-8)}`
   const minerLabel = formatMinerLabel(data.miner)
-  const showMinerLabel = data.networkType === 'Mainnet'
+  const hasMiner = data.networkType === 'Mainnet' && minerLabel !== 'Unknown Miner'
 
   return (
-    <div className="group relative min-w-60 max-w-60">
+    <div className="group relative w-32 max-w-36">
       <Handle
         type="target"
         position={Position.Left}
         className={[
-          "relative h-3 w-3 border-2 border-background after:pointer-events-none after:absolute after:inset-[-0.22rem] after:rounded-full after:bg-current after:opacity-25 after:blur-[6px] after:content-['']",
+          "absolute! top-8! h-3 w-3 border-2 border-background after:pointer-events-none after:absolute after:inset-[-0.22rem] after:rounded-full after:bg-current after:opacity-25 after:blur-[6px] after:content-['']",
           selected ? 'bg-accent text-accent' : 'bg-muted-foreground text-muted-foreground',
         ].join(' ')}
       />
@@ -44,7 +44,7 @@ function BlockTreeNodeComponent({ data, selected }: NodeProps<BlockTreeNodeType>
         title={`Block #${data.height}`}
         aria-label={`Open details for block ${data.height}`}
         className={[
-          'relative flex h-36 w-full flex-col overflow-hidden rounded-2xl border border-border/75 bg-muted/45 px-3.5 py-3 text-left dark:border-border/95 dark:bg-card/90',
+          'relative flex min-h-16 w-full flex-col overflow-hidden rounded-sm border border-border/75 bg-muted/45 pl-3 py-2.5 text-left dark:border-border/95 dark:bg-card/90',
           'cursor-pointer',
           'shadow-(--elevation-soft) backdrop-blur-md',
           'transition-[transform,border-color,box-shadow,background] duration-200 ease-out',
@@ -55,34 +55,20 @@ function BlockTreeNodeComponent({ data, selected }: NodeProps<BlockTreeNodeType>
             : 'border-border/80 group-hover:border-accent/35',
         ].join(' ')}
       >
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">Block</p>
-            <p className="text-lg font-semibold leading-none text-foreground">#{data.height}</p>
-          </div>
-        </div>
-
-        <p className="mt-2 font-mono text-xs text-foreground" title={data.hash}>
+        <p className="text-base font-bold tabular-nums leading-none text-foreground">#{data.height}</p>
+        <p className="mt-2.5 font-mono text-[11px] leading-none text-foreground/70" title={data.hash}>
           {truncatedHash}
         </p>
-        {showMinerLabel && (
-          <p className="mt-1 truncate text-xs font-medium text-muted-foreground" title={minerLabel}>
-            {minerLabel}
-          </p>
-        )}
 
         {data.tipStatuses.length > 0 && (
-          <ul
-            className="mt-auto flex max-w-full flex-nowrap gap-1.5 overflow-hidden pt-2"
-            aria-label="Tip status overview"
-          >
+          <ul className="mt-2 flex max-w-full flex-col gap-1 overflow-hidden" aria-label="Tip status overview">
             {data.tipStatuses.map(tipStatus => (
               <li key={tipStatus.status}>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Badge
                       variant="outline"
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-background/75 px-1.5 py-0.5"
+                      className="inline-flex shrink-0 items-center gap-1 self-start rounded-full bg-background/75 px-1.5 py-0.5"
                     >
                       <span
                         className="h-1.5 w-1.5 rounded-full ring-1 ring-background/70"
@@ -105,11 +91,20 @@ function BlockTreeNodeComponent({ data, selected }: NodeProps<BlockTreeNodeType>
         )}
       </button>
 
+      {hasMiner && (
+        <p
+          className="absolute top-full mt-1 w-full truncate px-1 text-center text-[10px] text-muted-foreground"
+          title={minerLabel}
+        >
+          {minerLabel}
+        </p>
+      )}
+
       <Handle
         type="source"
         position={Position.Right}
         className={[
-          "relative h-3 w-3 border-2 border-background after:pointer-events-none after:absolute after:inset-[-0.22rem] after:rounded-full after:bg-current after:opacity-25 after:blur-[6px] after:content-['']",
+          "absolute! top-8! h-3 w-3 border-2 border-background after:pointer-events-none after:absolute after:inset-[-0.22rem] after:rounded-full after:bg-current after:opacity-25 after:blur-[6px] after:content-['']",
           selected ? 'bg-accent text-accent' : 'bg-muted-foreground text-muted-foreground',
         ].join(' ')}
       />

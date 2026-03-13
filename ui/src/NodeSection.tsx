@@ -26,11 +26,7 @@ export function NodeSection({ network, nodes }: { network: Network; nodes: NodeI
   }, [])
 
   const sortedNodes = useMemo(() => {
-    return [...nodes].sort((a, b) => {
-      const aHeight = activeTip(a)?.height ?? 0
-      const bHeight = activeTip(b)?.height ?? 0
-      return bHeight - aHeight
-    })
+    return [...nodes].sort((a, b) => a.name.localeCompare(b.name))
   }, [nodes])
 
   const maxHeight = useMemo(() => {

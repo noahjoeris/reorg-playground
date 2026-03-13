@@ -13,17 +13,17 @@ export type MineTreeNodeType = Node<MineTreeNodeData, 'mine'>
 
 function MineTreeNodeComponent({ data, selected }: NodeProps<MineTreeNodeType>) {
   return (
-    <div className="group relative flex h-36 items-center">
+    <div className="group relative min-h-16">
       <Handle
         type="target"
         position={Position.Left}
         className={[
-          "relative h-3 w-3 border-2 border-background after:pointer-events-none after:absolute after:inset-[-0.22rem] after:rounded-full after:bg-current after:opacity-25 after:blur-[6px] after:content-['']",
+          "absolute! top-8! h-3 w-3 border-2 border-background after:pointer-events-none after:absolute after:inset-[-0.22rem] after:rounded-full after:bg-current after:opacity-25 after:blur-[6px] after:content-['']",
           selected ? 'bg-accent text-accent' : 'bg-muted-foreground text-muted-foreground',
         ].join(' ')}
       />
 
-      <div className="pl-3">
+      <div className="flex min-h-16 items-center pl-3">
         <MineBlockButton
           block={data.block}
           network={data.network}

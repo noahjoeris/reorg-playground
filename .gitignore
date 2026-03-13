@@ -1,3 +1,4 @@
 /target
+/bitcoin
 config.toml
 dbfile

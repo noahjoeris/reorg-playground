@@ -169,13 +169,13 @@ export function ActiveNodeCard({ node, maxHeight, p2p }: { node: NodeInfo; maxHe
               <li key={status} className="max-w-full">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Badge variant="outline" className={`${compactBadgeClass} max-w-full justify-start text-left`}>
+                    <Badge variant="outline" className={`${compactBadgeClass} max-w-full justify-start`}>
                       <span
                         className="h-1.5 w-1.5 shrink-0 rounded-full ring-1 ring-background/70"
                         style={{ backgroundColor: TIP_STATUS_COLORS[status] }}
                         aria-hidden="true"
                       />
-                      <span className="min-w-0 truncate">{TIP_STATUS_LABELS[status]}</span>
+                      <span>{TIP_STATUS_LABELS[status]}</span>
                       <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-muted text-xs leading-none">
                         {count}
                       </span>
