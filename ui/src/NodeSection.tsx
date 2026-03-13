@@ -17,7 +17,6 @@ export function NodeSection({ network, nodes }: { network: Network; nodes: NodeI
     getNodeP2PConnectionActive,
     isEnabledByNodeId: p2pEnabledById,
     loadingByNodeId: p2pLoadingById,
-    errorByNodeId: p2pErrorById,
   } = useNodeP2PConnection(network, nodes)
 
   useEffect(() => {
@@ -64,7 +63,6 @@ export function NodeSection({ network, nodes }: { network: Network; nodes: NodeI
                         supported: p2pEnabledById[node.id] ?? false,
                         active: getNodeP2PConnectionActive(node.id) ?? null,
                         loading: p2pLoadingById[node.id] ?? false,
-                        error: p2pErrorById[node.id],
                         onToggle: () => void toggleNodeP2PConnection(node),
                       }}
                     />

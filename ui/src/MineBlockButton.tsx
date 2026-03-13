@@ -28,7 +28,6 @@ export function MineBlockButton({
   const {
     mine,
     loading,
-    error,
     isFeatureEnabled: miningControlFeatureEnabled,
     isEnabledByNodeId: miningIsEnabledByNodeId,
   } = useMineBlock(network, activeTipNodes)
@@ -67,8 +66,6 @@ export function MineBlockButton({
       >
         {loading ? 'Mining...' : label}
       </Button>
-
-      {error && <p className="mt-0.5 text-center text-[10px] text-destructive">{error}</p>}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent onClick={(e: React.MouseEvent) => e.stopPropagation()}>

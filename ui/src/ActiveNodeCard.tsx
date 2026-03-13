@@ -69,7 +69,6 @@ export type P2PControl = {
   supported: boolean
   active: boolean | null
   loading: boolean
-  error?: string | null
   onToggle: () => void
 }
 
@@ -139,7 +138,7 @@ export function ActiveNodeCard({ node, maxHeight, p2p }: { node: NodeInfo; maxHe
 
       <CardContent className="space-y-1.5 px-3 pt-2 pb-2.5">
         {p2p.supported && (
-          <div className="space-y-1">
+          <div>
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="block w-full">
@@ -159,7 +158,6 @@ export function ActiveNodeCard({ node, maxHeight, p2p }: { node: NodeInfo; maxHe
                 {P2P_RECONNECT_TOOLTIP}
               </TooltipContent>
             </Tooltip>
-            {p2p.error && <p className="text-xs text-destructive">{p2p.error}</p>}
           </div>
         )}
 

@@ -1,11 +1,12 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import { mutate } from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { mineBlock } from '../services/miningService'
 import { getNetworkSnapshotKey } from '../services/swrKeys'
 import type { MineBlockResponse, Network, NodeInfo } from '../types'
+import { useNotification } from './useNotification'
 
-type MineControlNode = Pick<NodeInfo, 'id' | 'supports_mining'>
+type MineControlNode = Pick<NodeInfo, 'id' | 'name' | 'supports_mining'>
 type IsEnabledByNodeId = Record<number, boolean>
 type MineBlockMutationArgs = {
   networkId: number
@@ -16,7 +17,7 @@ type MineBlockMutationArgs = {
 const MINE_BLOCK_MUTATION_KEY = 'mine-block'
 
 export function useMineBlock(network: Network, nodes: MineControlNode[] = []) {
-  const [error, setError] = useState<string | null>(null)
+  const { notifyError, notifySuccess } = useNotification()
   const { trigger: triggerMineBlock, isMutating } = useSWRMutation<
     MineBlockResponse,
     Error,
@@ -41,20 +42,31 @@ export function useMineBlock(network: Network, nodes: MineControlNode[] = []) {
   const mine = useCallback(
     async (node: MineControlNode, count?: number) => {
       if (!(isEnabledByNodeId[node.id] ?? false)) {
-        setError('Mining control is disabled for this network')
+        notifyError({
+          title: 'Mining is unavailable',
+          description: `Mining control is disabled for ${node.name}.`,
+        })
         return
       }
 
-      setError(null)
       try {
         await triggerMineBlock({ networkId: network.id, nodeId: node.id, count })
         void mutate(getNetworkSnapshotKey(network.id))
+
+        const minedBlockCount = count ?? 1
+        notifySuccess({
+          title: minedBlockCount === 1 ? 'Mined 1 block' : `Mined ${minedBlockCount} blocks`,
+          description: `Triggered mining on ${node.name}.`,
+        })
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Network error')
+        notifyError({
+          title: 'Could not mine block',
+          description: err instanceof Error ? err.message : 'Network error',
+        })
       }
     },
-    [isEnabledByNodeId, network, triggerMineBlock],
+    [isEnabledByNodeId, network, notifyError, notifySuccess, triggerMineBlock],
   )
 
-  return { mine, loading: isMutating, error, isFeatureEnabled, isEnabledByNodeId }
+  return { mine, loading: isMutating, isFeatureEnabled, isEnabledByNodeId }
 }

@@ -4,6 +4,7 @@ import { openCacheChangesStream } from '../services/cacheChangeEventService'
 import { fetchNetworkSnapshot } from '../services/networkSnapshotService'
 import { getNetworkSnapshotKey, type NetworkSnapshotKey } from '../services/swrKeys'
 import type { ConnectionStatus, DataResponse } from '../types'
+import { useNotification } from './useNotification'
 
 const REFRESH_DEBOUNCE_MS = 150
 const EVENT_CACHE_CHANGED = 'cache_changed'
@@ -33,7 +34,20 @@ function fetchNetworkSnapshotByKey([, networkId]: NetworkSnapshotKey) {
   return fetchNetworkSnapshot(networkId)
 }
 
+function getInitialErrorToastId(networkId: number | null) {
+  return networkId === null ? undefined : `network-data-initial:${networkId}`
+}
+
+function getStaleErrorToastId(networkId: number | null) {
+  return networkId === null ? undefined : `network-data-stale:${networkId}`
+}
+
+function getConnectionToastId(networkId: number | null) {
+  return networkId === null ? undefined : `network-data-connection:${networkId}`
+}
+
 export function useNetworkData(networkId: number | null) {
+  const { notifyError, dismissNotification } = useNotification()
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
     networkId === null ? 'closed' : 'connecting',
   )
@@ -48,6 +62,19 @@ export function useNetworkData(networkId: number | null) {
       revalidateOnFocus: false,
       revalidateOnReconnect: false,
       keepPreviousData: false,
+      onError: currentError => {
+        const hasCurrentData = Boolean(data)
+
+        notifyError({
+          id: hasCurrentData ? getStaleErrorToastId(networkId) : getInitialErrorToastId(networkId),
+          title: hasCurrentData ? 'Could not refresh latest data' : 'Could not load chain data',
+          description: currentError.message,
+        })
+      },
+      onSuccess: () => {
+        dismissNotification(getInitialErrorToastId(networkId))
+        dismissNotification(getStaleErrorToastId(networkId))
+      },
     },
   )
 
@@ -65,29 +92,16 @@ export function useNetworkData(networkId: number | null) {
     }, REFRESH_DEBOUNCE_MS)
   }, [clearScheduledRefresh, mutate])
 
-  // Ensure timers are always cleaned up on unmount.
-  useEffect(
-    () => () => {
-      clearScheduledRefresh()
-    },
-    [clearScheduledRefresh],
-  )
-
-  // Update connection status baseline when selected network changes.
   useEffect(() => {
     clearScheduledRefresh()
 
     if (networkId === null) {
+      dismissNotification(getConnectionToastId(networkId))
       setConnectionStatus('closed')
       return
     }
 
     setConnectionStatus('connecting')
-  }, [networkId, clearScheduledRefresh])
-
-  // Subscribe to SSE invalidation events and schedule debounced snapshot refreshes.
-  useEffect(() => {
-    if (networkId === null) return
 
     const eventSource = openCacheChangesStream(networkId)
 
@@ -103,8 +117,28 @@ export function useNetworkData(networkId: number | null) {
       scheduleRefresh()
     }
 
-    eventSource.onopen = () => setConnectionStatus('connected')
-    eventSource.onerror = () => setConnectionStatus(mapEventSourceReadyStateToConnectionStatus(eventSource.readyState))
+    eventSource.onopen = () => {
+      dismissNotification(getConnectionToastId(networkId))
+      setConnectionStatus('connected')
+    }
+    eventSource.onerror = () => {
+      const nextStatus = mapEventSourceReadyStateToConnectionStatus(eventSource.readyState)
+
+      setConnectionStatus(currentStatus => {
+        if ((nextStatus === 'error' || nextStatus === 'closed') && currentStatus !== nextStatus) {
+          notifyError({
+            id: getConnectionToastId(networkId),
+            title: 'Live updates are degraded',
+            description:
+              nextStatus === 'closed'
+                ? 'Live updates are disconnected. Displayed data may be stale.'
+                : 'Live updates encountered an error. Displayed data may be stale.',
+          })
+        }
+
+        return nextStatus
+      })
+    }
 
     eventSource.addEventListener(EVENT_CACHE_CHANGED, handleCacheChanged)
     eventSource.addEventListener(EVENT_RESYNC_REQUIRED, handleResyncRequired)
@@ -113,9 +147,10 @@ export function useNetworkData(networkId: number | null) {
       eventSource.removeEventListener(EVENT_CACHE_CHANGED, handleCacheChanged)
       eventSource.removeEventListener(EVENT_RESYNC_REQUIRED, handleResyncRequired)
       eventSource.close()
+      dismissNotification(getConnectionToastId(networkId))
       clearScheduledRefresh()
     }
-  }, [networkId, scheduleRefresh, clearScheduledRefresh])
+  }, [networkId, scheduleRefresh, clearScheduledRefresh, notifyError, dismissNotification])
 
   return {
     data: networkId === null ? null : (data ?? null),
