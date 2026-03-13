@@ -186,6 +186,8 @@ function App() {
           showFoldToggle={foldMeta.potentialFoldedSegmentCount > 0}
           globalCollapsed={globalCollapsed}
           onToggleGlobalCollapsed={() => setGlobalCollapsed(c => !c)}
+          network={selectedNetwork}
+          allNodes={data?.nodes ?? []}
         />
 
         {selectedBlock && !foldMeta.hiddenBlockIds.has(selectedBlockId!) && (

@@ -1,13 +1,13 @@
-import { Controls, MiniMap, type Node, type OnInit, Panel, type ReactFlowInstance, ReactFlow } from '@xyflow/react'
+import { Controls, MiniMap, type Node, type OnInit, type ReactFlowInstance, ReactFlow } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useCallback, useMemo } from 'react'
-import { Button } from '@/components/ui/button'
 import type { ThemePreference } from '@/hooks/useTheme'
 import { BlockTreeNode } from './BlockTreeNode'
 import { FoldedBlockTreeNode } from './FoldedBlockTreeNode'
+import { GraphToolbar } from './GraphToolbar'
 import { MineTreeNode } from './MineTreeNode'
 import type { FlowNodeType } from './tree'
-import { type ConnectionStatus, TIP_STATUS_COLORS, type TipStatusEntry } from './types'
+import { type ConnectionStatus, type Network, type NodeInfo, TIP_STATUS_COLORS, type TipStatusEntry } from './types'
 
 const nodeTypes = { block: BlockTreeNode, mine: MineTreeNode, folded: FoldedBlockTreeNode }
 
@@ -33,6 +33,8 @@ export function BlockGraph({
   showFoldToggle,
   globalCollapsed,
   onToggleGlobalCollapsed,
+  network,
+  allNodes,
 }: {
   nodes: FlowNodeType[]
   edges: { id: string; source: string; target: string }[]
@@ -43,6 +45,8 @@ export function BlockGraph({
   showFoldToggle: boolean
   globalCollapsed: boolean
   onToggleGlobalCollapsed: () => void
+  network: Network | null
+  allNodes: NodeInfo[]
 }) {
   const showConnectionWarning = connectionStatus === 'error' || connectionStatus === 'closed'
 
@@ -107,21 +111,13 @@ export function BlockGraph({
                 className="hidden rounded-2xl border border-border md:block"
               />
               <Controls showInteractive={false} showZoom={false} />
-              {showFoldToggle && (
-                <Panel position="top-right" className="m-2">
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="outline"
-                    className="rounded-full border-border/80 bg-card/90 px-3 font-semibold backdrop-blur"
-                    onClick={onToggleGlobalCollapsed}
-                    aria-label={globalCollapsed ? 'Expand all folded blocks' : 'Collapse uninteresting blocks'}
-                    title={globalCollapsed ? 'Expand all' : 'Collapse all'}
-                  >
-                    {globalCollapsed ? 'Expand all' : 'Collapse all'}
-                  </Button>
-                </Panel>
-              )}
+              <GraphToolbar
+                network={network}
+                allNodes={allNodes}
+                showFoldToggle={showFoldToggle}
+                globalCollapsed={globalCollapsed}
+                onToggleGlobalCollapsed={onToggleGlobalCollapsed}
+              />
             </ReactFlow>
           )}
         </div>
