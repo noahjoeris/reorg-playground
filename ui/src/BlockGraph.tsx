@@ -1,4 +1,13 @@
-import { Controls, MiniMap, type Node, type OnInit, type ReactFlowInstance, ReactFlow } from '@xyflow/react'
+import {
+  Controls,
+  type Edge,
+  MarkerType,
+  MiniMap,
+  type Node,
+  type OnInit,
+  ReactFlow,
+  type ReactFlowInstance,
+} from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useCallback, useMemo } from 'react'
 import type { ThemePreference } from '@/hooks/useTheme'
@@ -37,7 +46,7 @@ export function BlockGraph({
   allNodes,
 }: {
   nodes: FlowNodeType[]
-  edges: { id: string; source: string; target: string }[]
+  edges: Edge[]
   themePreference: ThemePreference
   connectionStatus: ConnectionStatus
   staleError: string | null
@@ -52,9 +61,20 @@ export function BlockGraph({
 
   const fitViewOptions = useMemo(() => ({ padding: 0.25 }), [])
 
-  const onInit: OnInit = useCallback((instance: ReactFlowInstance) => {
-    instance.fitView(fitViewOptions)
-  }, [fitViewOptions])
+  const defaultEdgeOptions = useMemo(
+    () => ({
+      type: 'smoothstep' as const,
+      markerEnd: { type: MarkerType.ArrowClosed },
+    }),
+    [],
+  )
+
+  const onInit: OnInit = useCallback(
+    (instance: ReactFlowInstance) => {
+      instance.fitView(fitViewOptions)
+    },
+    [fitViewOptions],
+  )
 
   const minimapNodeColor = useCallback((node: Node) => {
     if (node.type === 'block') {
@@ -93,6 +113,7 @@ export function BlockGraph({
               nodes={nodes}
               edges={edges}
               nodeTypes={nodeTypes}
+              defaultEdgeOptions={defaultEdgeOptions}
               nodesDraggable={false}
               nodesConnectable={false}
               onInit={onInit}

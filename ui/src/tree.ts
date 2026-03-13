@@ -1,4 +1,4 @@
-import { type Edge, MarkerType } from '@xyflow/react'
+import type { Edge } from '@xyflow/react'
 import type { BlockTreeNodeType } from './BlockTreeNode'
 import type { FoldedBlockTreeNodeType } from './FoldedBlockTreeNode'
 import type { MineTreeNodeType } from './MineTreeNode'
@@ -617,7 +617,7 @@ function buildFoldedNodes(
       type: 'folded',
       selectable: false,
       position: { x: depth * H_GAP, y: slot * V_GAP },
-      width: 128,
+      width: 96,
       height: NODE_HEIGHT,
       data: {
         startHeight: segment.startHeight,
@@ -647,8 +647,6 @@ function buildVisibleBlockEdges(
       id: `${block.prev_id}-${block.id}`,
       source: String(block.prev_id),
       target: String(block.id),
-      type: 'smoothstep',
-      markerEnd: { type: MarkerType.ArrowClosed },
       style: {
         stroke: highlightsSelected ? 'var(--accent)' : 'var(--border)',
         strokeWidth: highlightsSelected ? 2 : 1.5,
@@ -670,8 +668,6 @@ function buildFoldBoundaryEdges(collapsedSegments: FoldSegment[]): Edge[] {
         id: `${segment.predecessorBlockId}-${foldNodeId}`,
         source: String(segment.predecessorBlockId),
         target: foldNodeId,
-        type: 'smoothstep',
-        markerEnd: { type: MarkerType.ArrowClosed },
         style: {
           stroke: 'var(--border)',
           strokeWidth: 1.5,
@@ -685,8 +681,6 @@ function buildFoldBoundaryEdges(collapsedSegments: FoldSegment[]): Edge[] {
         id: `${foldNodeId}-${segment.successorBlockId}`,
         source: foldNodeId,
         target: String(segment.successorBlockId),
-        type: 'smoothstep',
-        markerEnd: { type: MarkerType.ArrowClosed },
         style: {
           stroke: 'var(--border)',
           strokeWidth: 1.5,
@@ -714,6 +708,7 @@ function buildMineGraphElements(
   selectedBlockId: number | null,
   heightToDepth: ReadonlyMap<number, number>,
   resolveNextMineSlot: (blockId: number) => number,
+  slotByBlockId: ReadonlyMap<number, number>,
 ): MineGraphElements {
   const mineNodes: MineTreeNodeType[] = []
   const mineEdges: Edge[] = []
@@ -722,18 +717,35 @@ function buildMineGraphElements(
     return { mineNodes, mineEdges }
   }
 
+  const occupiedSlotsAtDepth = new Map<number, number[]>()
+  for (const block of visibleBlocks) {
+    const d = heightToDepth.get(block.height) ?? 0
+    if (!occupiedSlotsAtDepth.has(d)) occupiedSlotsAtDepth.set(d, [])
+    occupiedSlotsAtDepth.get(d)!.push(slotByBlockId.get(block.id) ?? 0)
+  }
+
   for (const block of visibleBlocks) {
     if (!hasMineableActiveTip(block, allNodes)) continue
 
     const depth = heightToDepth.get(block.height) ?? 0
-    const mineSlot = resolveNextMineSlot(block.id)
+    const targetDepth = depth + 1
+    let mineSlot = resolveNextMineSlot(block.id)
+
+    const occupied = occupiedSlotsAtDepth.get(targetDepth)
+    if (occupied?.some(s => Math.abs(s - mineSlot) < 1)) {
+      mineSlot = Math.max(...occupied) + 1
+    }
+
+    if (!occupiedSlotsAtDepth.has(targetDepth)) occupiedSlotsAtDepth.set(targetDepth, [])
+    occupiedSlotsAtDepth.get(targetDepth)!.push(mineSlot)
+
     const mineNodeId = `mine-${block.id}`
     const highlightsSelected = selectedBlockId !== null && selectedBlockId === block.id
 
     mineNodes.push({
       id: mineNodeId,
       type: 'mine',
-      position: { x: (depth + 1) * H_GAP, y: mineSlot * V_GAP },
+      position: { x: targetDepth * H_GAP, y: mineSlot * V_GAP },
       width: 100,
       height: NODE_HEIGHT,
       selected: highlightsSelected,
@@ -748,8 +760,6 @@ function buildMineGraphElements(
       id: `${block.id}-${mineNodeId}`,
       source: String(block.id),
       target: mineNodeId,
-      type: 'smoothstep',
-      markerEnd: { type: MarkerType.ArrowClosed },
       style: {
         stroke: 'var(--accent)',
         strokeWidth: highlightsSelected ? 2 : 1.5,
@@ -799,6 +809,7 @@ export function buildReactFlowGraph(
     selectedBlockId,
     heightToDepth,
     resolveNextMineSlot,
+    slotByBlockId,
   )
 
   return {
