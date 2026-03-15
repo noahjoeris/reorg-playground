@@ -39,8 +39,8 @@ pub async fn populate_cache(network: &crate::config::Network, tree: &Tree, cache
                 n.info().id,
                 NodeDataJson::new(
                     n.info().clone(),
-                    n.supports_controls(network.disable_node_controls),
-                    n.supports_mining(network.disable_node_controls),
+                    n.supports_controls(network.view_only_mode),
+                    n.supports_mining(network.view_only_mode),
                     &[],
                     VERSION_UNKNOWN.to_string(),
                     0,

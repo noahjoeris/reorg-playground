@@ -80,7 +80,7 @@ export function TriggerReorgButton({ network, nodes, buttonClassName }: TriggerR
   const reorgNode = capableNodes.find(n => String(n.id) === reorgNodeId) ?? null
   const otherNode = capableNodes.find(n => String(n.id) !== reorgNodeId) ?? null
 
-  if (!isRegtestOrSignet(network) || network.disable_node_controls || capableNodes.length < 2) {
+  if (!isRegtestOrSignet(network) || network.view_only_mode || capableNodes.length < 2) {
     return null
   }
 

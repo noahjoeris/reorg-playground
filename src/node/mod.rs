@@ -41,14 +41,14 @@ pub trait Node: Send + Sync {
     fn info(&self) -> &NodeInfo;
     fn endpoint(&self) -> &str;
 
-    fn supports_controls(&self, disable_node_controls: bool) -> bool {
-        !disable_node_controls
+    fn supports_controls(&self, view_only_mode: bool) -> bool {
+        !view_only_mode
             && self.info().implementation == "Bitcoin Core"
             && is_regtest_or_signet(self.info().network_type)
     }
 
-    fn supports_mining(&self, disable_node_controls: bool) -> bool {
-        self.supports_controls(disable_node_controls) && self.info().supports_mining
+    fn supports_mining(&self, view_only_mode: bool) -> bool {
+        self.supports_controls(view_only_mode) && self.info().supports_mining
     }
 
     async fn version(&self) -> Result<String, FetchError>;

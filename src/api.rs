@@ -209,7 +209,7 @@ pub async fn mine_block(
             );
         }
     };
-    if network.disable_node_controls {
+    if network.view_only_mode {
         return (
             StatusCode::BAD_REQUEST,
             Json(MineBlockResponse {
@@ -231,7 +231,7 @@ pub async fn mine_block(
             );
         }
     };
-    if !node.supports_mining(network.disable_node_controls) {
+    if !node.supports_mining(network.view_only_mode) {
         return (
             StatusCode::BAD_REQUEST,
             Json(MineBlockResponse {
@@ -315,7 +315,7 @@ pub async fn set_network_active(
             );
         }
     };
-    if network.disable_node_controls {
+    if network.view_only_mode {
         return (
             StatusCode::BAD_REQUEST,
             Json(SetNetworkActiveResponse {
@@ -589,7 +589,7 @@ mod tests {
             visible_heights_from_tip: 0,
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
-            disable_node_controls: false,
+            view_only_mode: false,
             signet_challenge: None,
             signet_nbits: None,
             nodes: vec![Arc::new(node) as Arc<dyn Node>],
@@ -598,7 +598,7 @@ mod tests {
 
     fn network_with_nodes(
         network_id: u32,
-        disable_node_controls: bool,
+        view_only_mode: bool,
         nodes: Vec<MockNode>,
     ) -> Vec<Network> {
         vec![Network {
@@ -610,7 +610,7 @@ mod tests {
             visible_heights_from_tip: 0,
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
-            disable_node_controls,
+            view_only_mode,
             signet_challenge: None,
             signet_nbits: None,
             nodes: nodes
@@ -686,7 +686,7 @@ mod tests {
             visible_heights_from_tip: 0,
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
-            disable_node_controls: false,
+            view_only_mode: false,
             signet_challenge: None,
             signet_nbits: None,
             nodes: vec![],
@@ -828,7 +828,7 @@ mod tests {
             visible_heights_from_tip: 0,
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
-            disable_node_controls: false,
+            view_only_mode: false,
             signet_challenge: None,
             signet_nbits: None,
             nodes: vec![],

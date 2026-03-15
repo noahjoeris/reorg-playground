@@ -73,7 +73,7 @@ export type Network = {
   name: string
   description: string
   network_type: NetworkType
-  disable_node_controls: boolean
+  view_only_mode: boolean
 }
 
 export type NetworksResponse = {

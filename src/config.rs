@@ -63,7 +63,7 @@ struct TomlNetwork {
     extra_hotspot_heights: usize,
     network_type: NetworkType,
     #[serde(default)]
-    disable_node_controls: bool,
+    view_only_mode: bool,
     signet_challenge: Option<String>,
     signet_nbits: Option<String>,
     nodes: Vec<TomlNode>,
@@ -79,7 +79,7 @@ pub struct Network {
     pub visible_heights_from_tip: usize,
     pub extra_hotspot_heights: usize,
     pub network_type: NetworkType,
-    pub disable_node_controls: bool,
+    pub view_only_mode: bool,
     pub signet_challenge: Option<String>,
     pub signet_nbits: Option<String>,
     pub nodes: Vec<Arc<dyn Node>>,
@@ -89,7 +89,7 @@ impl fmt::Display for TomlNetwork {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Network (id={}, description='{}', name='{}', query_interval={}, first_tracked_height={}, visible_heights_from_tip={}, extra_hotspot_heights={}, disable_node_controls={}, nodes={:?})",
+            "Network (id={}, description='{}', name='{}', query_interval={}, first_tracked_height={}, visible_heights_from_tip={}, extra_hotspot_heights={}, view_only_mode={}, nodes={:?})",
             self.id,
             self.description,
             self.name,
@@ -97,7 +97,7 @@ impl fmt::Display for TomlNetwork {
             self.first_tracked_height,
             self.visible_heights_from_tip,
             self.extra_hotspot_heights,
-            self.disable_node_controls,
+            self.view_only_mode,
             self.nodes,
         )
     }
@@ -283,7 +283,7 @@ fn parse_toml_network(
         visible_heights_from_tip: toml_network.visible_heights_from_tip,
         extra_hotspot_heights: toml_network.extra_hotspot_heights,
         network_type: toml_network.network_type.clone(),
-        disable_node_controls: toml_network.disable_node_controls,
+        view_only_mode: toml_network.view_only_mode,
         signet_challenge: toml_network.signet_challenge.clone(),
         signet_nbits: toml_network.signet_nbits.clone(),
         nodes,
@@ -432,19 +432,19 @@ mod tests {
     }
 
     #[test]
-    fn parses_disable_node_controls_flag() {
+    fn parses_view_only_mode_flag() {
         match parse_example_with(|config| {
             network_mut(config, 2)
                 .as_table_mut()
                 .expect("network should be a table")
-                .insert("disable_node_controls".to_string(), Value::Boolean(true));
+                .insert("view_only_mode".to_string(), Value::Boolean(true));
         }) {
             Ok(config) => {
                 let network = &config.networks[2];
-                assert!(network.disable_node_controls);
+                assert!(network.view_only_mode);
             }
             Err(e) => {
-                panic!("disable_node_controls=true should parse: {}", e);
+                panic!("view_only_mode=true should parse: {}", e);
             }
         }
     }

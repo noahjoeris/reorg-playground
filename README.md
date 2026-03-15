@@ -101,7 +101,7 @@ Host-managed Signet mining defaults to `./bitcoin-core/contrib/signet/miner`. Ov
 
 - Interactive block-header graph with forks/tips and collapse/expand behavior for dense sections.
 - Multi-backend node observation (Bitcoin Core, Electrum, Esplora, btcd) via RPC/REST.
-- Node controls for Bitcoin Core (Regtest mining, Regtest/custom Signet P2P toggle), configurable per network via `disable_node_controls`.
+- Node controls for Bitcoin Core (Regtest mining, Regtest/custom Signet P2P toggle), configurable per network via `view_only_mode`.
 - Config-driven network/node setup through `config.toml`.
 - Header data collection and persistence in SQLite.
 - Modern, responsive UI for exploring forks and node state.
@@ -125,7 +125,7 @@ Host-managed Signet mining defaults to `./bitcoin-core/contrib/signet/miner`. Ov
 
 ## Known Limitations
 - App-triggered mining is currently supported only for Bitcoin Core (on Regtest and custom Signet); other backends remain read-only for mining.
-- P2P toggling works for Bitcoin Core on Regtest and custom Signet; controls can still be disabled per network via `disable_node_controls`.
+- P2P toggling works for Bitcoin Core on Regtest and custom Signet; controls can still be disabled per network via `view_only_mode`.
 - Backend node data collection still relies on per-network polling (via config param `query_interval`), while frontend updates are pushed via SSE invalidation + snapshot refresh.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
