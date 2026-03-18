@@ -1,6 +1,7 @@
 //! Shared header-fetch orchestration used by all node backend implementations.
 
 use crate::error::{FetchError, JsonRPCError};
+use crate::headertree;
 use crate::node::{ActiveHeadersBatchProvider, HeaderLocator, Node};
 use crate::types::{ChainTip, ChainTipStatus, HeaderInfo, Tree};
 use base64::prelude::*;
@@ -11,6 +12,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cmp::max;
+use std::collections::HashSet;
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::mpsc::UnboundedSender;
@@ -65,26 +67,19 @@ pub(crate) async fn get_new_active_headers_as_batch(
             break;
         }
 
-        let mut already_knew_a_header = false;
-        let mut batch_new: Vec<HeaderInfo> = Vec::new();
-
-        {
-            let tree_locked = tree.lock().await;
-            for (header, height) in headers.iter().zip(start_height as u64..) {
-                if tree_locked.index.contains_key(&header.block_hash()) {
-                    already_knew_a_header = true;
-                    continue;
-                }
-
-                let header_info = make_header_info(height, *header);
-                batch_new.push(header_info.clone());
-                new_headers.push(header_info);
-            }
-        }
+        let mut encountered_known_header = false;
+        let batch_new = collect_unknown_active_batch_headers(
+            tree,
+            start_height as u64,
+            &headers,
+            &mut encountered_known_header,
+        )
+        .await;
+        new_headers.extend(batch_new.iter().cloned());
 
         send_progress_batch(progress_tx, batch_new);
 
-        if already_knew_a_header {
+        if encountered_known_header {
             break;
         }
 
@@ -104,7 +99,7 @@ pub(crate) async fn get_new_active_headers_by_height<N: Node + ?Sized>(
     progress_tx: Option<&UnboundedSender<Vec<HeaderInfo>>>,
 ) -> Result<Vec<HeaderInfo>, FetchError> {
     let mut new_headers: Vec<HeaderInfo> = Vec::new();
-    let mut rpc_buffer: Vec<HeaderInfo> = Vec::new();
+    let mut progress_batch: Vec<HeaderInfo> = Vec::new();
     let active_tip = find_active_tip(tips)?;
 
     let mut query_height: i64 = active_tip.height as i64;
@@ -121,19 +116,19 @@ pub(crate) async fn get_new_active_headers_by_height<N: Node + ?Sized>(
         }
 
         let header_info = make_header_info(height, header);
-        rpc_buffer.push(header_info.clone());
+        progress_batch.push(header_info.clone());
         new_headers.push(header_info);
 
-        if rpc_buffer.len() >= RPC_PROGRESS_BATCH_SIZE
+        if progress_batch.len() >= RPC_PROGRESS_BATCH_SIZE
             && let Some(tx) = progress_tx
         {
-            let _ = tx.send(std::mem::take(&mut rpc_buffer));
+            let _ = tx.send(std::mem::take(&mut progress_batch));
         }
 
         query_height -= 1;
     }
 
-    send_progress_batch(progress_tx, rpc_buffer);
+    send_progress_batch(progress_tx, progress_batch);
     new_headers.sort_by_key(|h| h.height);
     Ok(new_headers)
 }
@@ -150,38 +145,100 @@ pub(crate) async fn get_new_nonactive_headers_by_hash<N: Node + ?Sized>(
 
     for inactive_tip in tips
         .iter()
-        .filter(|tip| tip.height.saturating_sub(tip.branchlen as u64) > first_tracked_height)
+        .filter(|tip| nonactive_tip_reaches_tracked_range(tip, first_tracked_height))
         .filter(|tip| tip.status != ChainTipStatus::Active)
     {
         let tip_hash = inactive_tip.block_hash().map_err(|e| {
             FetchError::DataError(format!("Invalid block hash '{}': {}", inactive_tip.hash, e))
         })?;
 
-        let mut next_header = tip_hash;
-        let mut branch_headers: Vec<HeaderInfo> = Vec::new();
+        let mut next_hash = tip_hash;
+        let mut headers_for_tip: Vec<HeaderInfo> = Vec::new();
 
         for i in 0..=inactive_tip.branchlen {
-            if tree_contains_hash(tree, &next_header).await {
+            let height = inactive_tip.height.saturating_sub(i as u64);
+            if height < first_tracked_height {
                 break;
             }
 
-            let height = inactive_tip.height.saturating_sub(i as u64);
+            if tree_contains_hash(tree, &next_hash).await {
+                break;
+            }
+
             debug!(
                 "loading non-active-chain header: hash={}, height={}",
-                next_header, height
+                next_hash, height
             );
 
-            let header = node.block_header(HeaderLocator::Hash(next_header)).await?;
+            let header = node.block_header(HeaderLocator::Hash(next_hash)).await?;
             let header_info = make_header_info(height, header);
 
-            next_header = header.prev_blockhash;
-            branch_headers.push(header_info.clone());
+            next_hash = header.prev_blockhash;
+            headers_for_tip.push(header_info.clone());
             new_headers.push(header_info);
         }
 
-        send_progress_batch(progress_tx, branch_headers);
+        send_progress_batch(progress_tx, headers_for_tip);
     }
 
+    Ok(new_headers)
+}
+
+/// Repairs disconnected tracked subtrees by loading the missing headers below each root.
+///
+/// Every unexpected root belongs either to the active chain at that height or to
+/// a non-active branch. Active roots are repaired by height lookup; non-active
+/// roots are repaired by hash lookup when the backend supports it.
+pub(crate) async fn fetch_missing_headers_for_unexpected_roots<N: Node + ?Sized>(
+    node: &N,
+    tree: &Tree,
+    first_tracked_height: u64,
+    progress_tx: Option<&UnboundedSender<Vec<HeaderInfo>>>,
+) -> Result<Vec<HeaderInfo>, FetchError> {
+    let mut new_headers: Vec<HeaderInfo> = Vec::new();
+    let mut loaded_hashes: HashSet<BlockHash> = HashSet::new();
+
+    for unexpected_root in headertree::unexpected_roots(tree, first_tracked_height).await {
+        let active_header_at_root_height = node
+            .block_header(HeaderLocator::Height(unexpected_root.height))
+            .await?;
+        let mut headers_for_root =
+            if active_header_at_root_height.block_hash() == unexpected_root.header.block_hash() {
+                fetch_missing_active_ancestors(
+                    node,
+                    tree,
+                    first_tracked_height,
+                    &unexpected_root,
+                    &mut loaded_hashes,
+                )
+                .await?
+            } else {
+                match fetch_missing_branch_ancestors_by_hash(
+                    node,
+                    tree,
+                    first_tracked_height,
+                    &unexpected_root,
+                    &mut loaded_hashes,
+                )
+                .await
+                {
+                    Ok(headers) => headers,
+                    Err(FetchError::NotSupported {
+                        operation: "block_header(hash)",
+                        ..
+                    }) => Vec::new(),
+                    Err(e) => return Err(e),
+                }
+            };
+
+        if !headers_for_root.is_empty() {
+            headers_for_root.sort_by_key(|header| header.height);
+            new_headers.extend(headers_for_root.iter().cloned());
+        }
+        send_progress_batch(progress_tx, headers_for_root);
+    }
+
+    new_headers.sort_by_key(|h| h.height);
     Ok(new_headers)
 }
 
@@ -200,6 +257,14 @@ fn make_header_info(height: u64, header: Header) -> HeaderInfo {
     }
 }
 
+/// Returns whether a non-active tip can contribute headers inside the tracked range.
+///
+/// The `checked_sub` guard prevents underflow when a backend reports an invalid
+/// branch length.
+fn nonactive_tip_reaches_tracked_range(tip: &ChainTip, first_tracked_height: u64) -> bool {
+    tip.height >= first_tracked_height && tip.height.checked_sub(tip.branchlen as u64).is_some()
+}
+
 /// Sends progress only when a non-empty batch is available.
 fn send_progress_batch(
     progress_tx: Option<&UnboundedSender<Vec<HeaderInfo>>>,
@@ -215,6 +280,82 @@ fn send_progress_batch(
 async fn tree_contains_hash(tree: &Tree, hash: &BlockHash) -> bool {
     let tree_locked = tree.lock().await;
     tree_locked.index.contains_key(hash)
+}
+
+/// Fetches missing active-chain ancestors beneath an unexpected root.
+async fn fetch_missing_active_ancestors<N: Node + ?Sized>(
+    node: &N,
+    tree: &Tree,
+    first_tracked_height: u64,
+    root: &HeaderInfo,
+    loaded_hashes: &mut HashSet<BlockHash>,
+) -> Result<Vec<HeaderInfo>, FetchError> {
+    let mut headers = Vec::new();
+
+    for height in (first_tracked_height..root.height).rev() {
+        let header = node.block_header(HeaderLocator::Height(height)).await?;
+        let header_hash = header.block_hash();
+        if tree_contains_hash(tree, &header_hash).await || !loaded_hashes.insert(header_hash) {
+            break;
+        }
+        headers.push(make_header_info(height, header));
+    }
+
+    Ok(headers)
+}
+
+/// Fetches missing non-active ancestors beneath an unexpected root using hash lookup.
+async fn fetch_missing_branch_ancestors_by_hash<N: Node + ?Sized>(
+    node: &N,
+    tree: &Tree,
+    first_tracked_height: u64,
+    root: &HeaderInfo,
+    loaded_hashes: &mut HashSet<BlockHash>,
+) -> Result<Vec<HeaderInfo>, FetchError> {
+    let mut headers = Vec::new();
+    let mut next_hash = root.header.prev_blockhash;
+
+    for height in (first_tracked_height..root.height).rev() {
+        if tree_contains_hash(tree, &next_hash).await || loaded_hashes.contains(&next_hash) {
+            break;
+        }
+
+        debug!(
+            "repairing missing ancestor by hash: hash={}, height={}",
+            next_hash, height
+        );
+        let header = node.block_header(HeaderLocator::Hash(next_hash)).await?;
+        let header_hash = header.block_hash();
+        next_hash = header.prev_blockhash;
+
+        if !loaded_hashes.insert(header_hash) {
+            break;
+        }
+        headers.push(make_header_info(height, header));
+    }
+
+    Ok(headers)
+}
+
+async fn collect_unknown_active_batch_headers(
+    tree: &Tree,
+    start_height: u64,
+    headers: &[Header],
+    encountered_known_header: &mut bool,
+) -> Vec<HeaderInfo> {
+    let tree_locked = tree.lock().await;
+    headers
+        .iter()
+        .zip(start_height..)
+        .filter_map(|(header, height)| {
+            if tree_locked.index.contains_key(&header.block_hash()) {
+                *encountered_known_header = true;
+                None
+            } else {
+                Some(make_header_info(height, *header))
+            }
+        })
+        .collect()
 }
 
 // -- JSON-RPC transport shared by RPC-backed node implementations --
@@ -604,11 +745,10 @@ mod tests {
             .await
             {
                 Ok(headers) => headers,
-                Err(FetchError::NotSupported { operation, .. })
-                    if operation == "block_header(hash)" =>
-                {
-                    Vec::new()
-                }
+                Err(FetchError::NotSupported {
+                    operation: "block_header(hash)",
+                    ..
+                }) => Vec::new(),
                 Err(e) => return Err(e),
             };
 
@@ -799,6 +939,69 @@ mod tests {
         assert_eq!(heights(&headers), vec![10, 9]);
     }
 
+    #[tokio::test]
+    async fn fetch_missing_headers_for_unexpected_roots_recovers_active_gap() {
+        let all_headers = make_linear_headers(0, 25);
+        let mut known_headers = all_headers.clone();
+        known_headers.retain(|(height, _)| *height != 10 && *height != 11);
+        let known_tree = make_tree(&known_headers);
+
+        let active_tip_hash = all_headers[25].1.block_hash();
+        let node = MockNode::new(
+            ActiveFetchMode::Height,
+            HeaderLookupMode::HeightAndHash,
+            vec![make_tip(25, active_tip_hash, 0, ChainTipStatus::Active)],
+            all_headers,
+        );
+
+        let headers = fetch_missing_headers_for_unexpected_roots(&node, &known_tree, 0, None)
+            .await
+            .expect("backfilled active gap");
+
+        assert_eq!(heights(&headers), vec![10, 11]);
+    }
+
+    #[tokio::test]
+    async fn fetch_missing_headers_for_unexpected_roots_recovers_nonactive_gap() {
+        let active_headers = make_linear_headers(0, 10);
+
+        let hash_8 = active_headers[8].1.block_hash();
+        let alt_9 = make_header(hash_8, 9, 10_000);
+        let alt_10 = make_header(alt_9.block_hash(), 10, 20_000);
+        let alt_11 = make_header(alt_10.block_hash(), 11, 30_000);
+
+        let mut all_headers = active_headers.clone();
+        all_headers.push((9, alt_9));
+        all_headers.push((10, alt_10));
+        all_headers.push((11, alt_11));
+
+        let known_tree = make_tree(
+            &[
+                active_headers[..=8].to_vec(),
+                vec![(9, alt_9), (11, alt_11)],
+            ]
+            .concat(),
+        );
+
+        let node = MockNode::new(
+            ActiveFetchMode::Height,
+            HeaderLookupMode::HeightAndHash,
+            vec![make_tip(
+                11,
+                alt_11.block_hash(),
+                3,
+                ChainTipStatus::ValidFork,
+            )],
+            all_headers,
+        );
+
+        let headers = fetch_missing_headers_for_unexpected_roots(&node, &known_tree, 0, None)
+            .await
+            .expect("backfilled nonactive gap");
+
+        assert_eq!(heights(&headers), vec![10]);
+    }
+
     /// Tests that non-active traversal is skipped when hash-based header lookup is unsupported.
     #[tokio::test]
     async fn new_nonactive_headers_skips_when_hash_lookup_not_supported() {
@@ -824,9 +1027,9 @@ mod tests {
         assert_eq!(heights(&headers), vec![1, 2]);
     }
 
-    /// Tests that non-active tip filtering uses `saturating_sub` and avoids underflow-driven fetches.
+    /// Tests that invalid branch lengths do not trigger non-active fetching.
     #[tokio::test]
-    async fn new_nonactive_headers_filter_avoids_underflow_with_saturating_sub() {
+    async fn invalid_nonactive_branch_length_is_skipped() {
         let all_headers = make_linear_headers(0, 1);
         let known_tree = make_tree(&all_headers);
 
@@ -854,5 +1057,81 @@ mod tests {
         .expect("nonactive headers");
 
         assert!(headers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn nonactive_headers_include_branch_touching_first_tracked_height() {
+        let active_headers = make_linear_headers(0, 10);
+
+        let hash_8 = active_headers[8].1.block_hash();
+        let alt_9 = make_header(hash_8, 9, 10_000);
+        let alt_10 = make_header(alt_9.block_hash(), 10, 20_000);
+
+        let mut all_headers = active_headers.clone();
+        all_headers.push((9, alt_9));
+        all_headers.push((10, alt_10));
+
+        let known_tree = make_tree(&active_headers[..=8]);
+        let node = MockNode::new(
+            ActiveFetchMode::Height,
+            HeaderLookupMode::HeightAndHash,
+            vec![make_tip(
+                10,
+                alt_10.block_hash(),
+                2,
+                ChainTipStatus::ValidFork,
+            )],
+            all_headers,
+        );
+
+        let headers = get_new_nonactive_headers_by_hash(
+            &node,
+            &node.tips().await.expect("tips"),
+            &known_tree,
+            9,
+            None,
+        )
+        .await
+        .expect("nonactive headers");
+
+        assert_eq!(heights(&headers), vec![10, 9]);
+    }
+
+    #[tokio::test]
+    async fn nonactive_headers_do_not_fetch_below_first_tracked_height() {
+        let active_headers = make_linear_headers(0, 10);
+
+        let hash_8 = active_headers[8].1.block_hash();
+        let alt_9 = make_header(hash_8, 9, 10_000);
+        let alt_10 = make_header(alt_9.block_hash(), 10, 20_000);
+
+        let mut all_headers = active_headers.clone();
+        all_headers.push((9, alt_9));
+        all_headers.push((10, alt_10));
+
+        let known_tree = make_tree(&active_headers[9..=10]);
+        let node = MockNode::new(
+            ActiveFetchMode::Height,
+            HeaderLookupMode::HeightAndHash,
+            vec![make_tip(
+                10,
+                alt_10.block_hash(),
+                2,
+                ChainTipStatus::ValidFork,
+            )],
+            all_headers,
+        );
+
+        let headers = get_new_nonactive_headers_by_hash(
+            &node,
+            &node.tips().await.expect("tips"),
+            &known_tree,
+            9,
+            None,
+        )
+        .await
+        .expect("nonactive headers");
+
+        assert_eq!(heights(&headers), vec![10, 9]);
     }
 }

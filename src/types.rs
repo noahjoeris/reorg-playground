@@ -25,9 +25,9 @@ pub struct Cache {
     pub node_data: NodeData,
     pub forks: Vec<Fork>,
     pub metrics: NetworkMetricsJson,
-    /// Since strip_tree and identifying miners runs in parallel,
-    /// the strip_tree result might not contain a miner yet. Keeping
-    /// recent miners here and use + manage them when updating the cache.
+    /// Tree serialization and miner identification run independently, so the
+    /// cached header payload can lag behind the latest miner lookup result.
+    /// Recent miner updates are replayed when refreshing the cache.
     pub recent_miners: Vec<(String, String)>,
 }
 

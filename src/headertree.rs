@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::types::{Fork, HeaderInfo, HeaderInfoJson, Tree};
 
 use log::{debug, info, warn};
-use petgraph::graph::NodeIndex;
+use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::{Dfs, EdgeRef};
 
 /// Hybrid selection policy: always includes a stable recent window of
@@ -36,8 +36,8 @@ pub async fn sorted_interesting_heights(
     }
 
     let max_height: u64 = height_occurences
-        .iter()
-        .map(|(k, _)| *k)
+        .keys()
+        .copied()
         .max()
         .expect("we should have at least one height here as we have blocks");
 
@@ -90,115 +90,43 @@ pub async fn sorted_interesting_heights(
     interesting_heights
 }
 
-// We strip the tree of headers that aren't interesting to us.
-pub async fn strip_tree(
-    tree: &Tree,
-    visible_heights_from_tip: usize,
-    extra_hotspot_heights: usize,
-    first_tracked_height: u64,
-    tip_heights: BTreeSet<u64>,
-) -> Vec<HeaderInfoJson> {
-    let interesting_heights = sorted_interesting_heights(
-        tree,
-        visible_heights_from_tip,
-        extra_hotspot_heights,
-        first_tracked_height,
-        tip_heights,
-    )
-    .await;
-
+/// Serializes the tracked header tree for the API without rewriting parent edges.
+pub async fn serialize_tree(tree: &Tree) -> Vec<HeaderInfoJson> {
     let tree_locked = tree.lock().await;
-
     info!(
-        "strip_tree: tree_nodes={}, first_tracked_height={}, interesting_heights={}",
-        tree_locked.graph.node_count(),
-        first_tracked_height,
-        interesting_heights.len(),
+        "serialize_tree: tree_nodes={}",
+        tree_locked.graph.node_count()
     );
+    graph_to_header_infos(&tree_locked.graph)
+}
 
-    let mut stripped_tree = tree_locked.graph.filter_map(
-        |_, header| {
-            for x in -2i64..=1 {
-                if interesting_heights.contains(&((header.height as i64 - x) as u64)) {
-                    return Some(header);
-                }
-            }
-            None
-        },
-        |_, edge| Some(edge),
-    );
+fn graph_to_header_infos(graph: &DiGraph<HeaderInfo, bool>) -> Vec<HeaderInfoJson> {
+    let mut headers: Vec<HeaderInfoJson> = Vec::with_capacity(graph.node_count());
 
-    // We now have multiple sub header trees. To reconnect them
-    // we figure out the starts of these chains (roots) and sort
-    // them by height. We can't assume they are sorted as we
-    // added data from multiple nodes to the tree.
-
-    let mut roots: Vec<NodeIndex> = stripped_tree
-        .externals(petgraph::Direction::Incoming)
-        .collect();
-
-    roots.sort_by_key(|idx| stripped_tree[*idx].height);
-
-    let mut prev_header_to_connect_to: Option<NodeIndex> = None;
-    for root in roots.iter() {
-        if let Some(prev_idx) = prev_header_to_connect_to {
-            stripped_tree.add_edge(prev_idx, *root, &false);
-            prev_header_to_connect_to = None;
-        }
-
-        // Find the header with the maximum height in the sub chain via DFS.
-        // This is the header we connect the next sub-chain root to.
-        let mut max_height: u64 = u64::default();
-        let mut dfs = Dfs::new(&stripped_tree, *root);
-        while let Some(idx) = dfs.next(&stripped_tree) {
-            let height = stripped_tree[idx].height;
-            if height > max_height {
-                max_height = height;
-                prev_header_to_connect_to = Some(idx);
-            }
-        }
-    }
-
-    debug!(
-        "done collapsing tree: roots={}, tips={}",
-        stripped_tree
-            .externals(petgraph::Direction::Incoming)
-            .count(),
-        stripped_tree
-            .externals(petgraph::Direction::Outgoing)
-            .count(),
-    );
-
-    let mut headers: Vec<HeaderInfoJson> = Vec::new();
-    for idx in stripped_tree.node_indices() {
-        let prev_nodes = stripped_tree.neighbors_directed(idx, petgraph::Direction::Incoming);
-        let prev_node_index: usize = match prev_nodes.clone().count() {
+    for idx in graph.node_indices() {
+        let parent_nodes = graph.neighbors_directed(idx, petgraph::Direction::Incoming);
+        let parent_id = match parent_nodes.clone().count() {
             0 => usize::MAX, // signals "no parent" to the JavaScript frontend
-            1 => prev_nodes
+            1 => parent_nodes
                 .last()
                 .expect("count was 1 so last() must succeed")
                 .index(),
-            n => {
+            parent_count => {
                 warn!(
                     "block at height {} has {} incoming edges; using first",
-                    stripped_tree[idx].height, n
+                    graph[idx].height, parent_count
                 );
-                prev_nodes
+                parent_nodes
                     .last()
                     .expect("count > 1 so last() must succeed")
                     .index()
             }
         };
-        headers.push(HeaderInfoJson::new(
-            stripped_tree[idx],
-            idx.index(),
-            prev_node_index,
-        ));
+
+        headers.push(HeaderInfoJson::new(&graph[idx], idx.index(), parent_id));
     }
 
-    // Sorting the headers by id helps debugging the API response.
-    headers.sort_by_key(|h| h.id);
-
+    headers.sort_by_key(|header| header.id);
     headers
 }
 
@@ -230,6 +158,32 @@ pub async fn recent_forks(tree: &Tree, how_many: usize) -> Vec<Fork> {
 
     forks.sort_by_key(|f| f.common.height);
     forks.iter().rev().take(how_many).cloned().collect()
+}
+
+/// Counts roots that indicate an unexpected gap above the tracked lower bound.
+pub async fn unexpected_root_count(tree: &Tree, first_tracked_height: u64) -> usize {
+    let tree_locked = tree.lock().await;
+    tree_locked
+        .graph
+        .externals(petgraph::Direction::Incoming)
+        .filter(|idx| tree_locked.graph[*idx].height > first_tracked_height)
+        .count()
+}
+
+/// Returns disconnected subtree roots above `first_tracked_height`.
+///
+/// Each returned root indicates that the tracked tree is missing at least one
+/// ancestor between `first_tracked_height` and the root height.
+pub async fn unexpected_roots(tree: &Tree, first_tracked_height: u64) -> Vec<HeaderInfo> {
+    let tree_locked = tree.lock().await;
+    let mut roots: Vec<HeaderInfo> = tree_locked
+        .graph
+        .externals(petgraph::Direction::Incoming)
+        .filter(|idx| tree_locked.graph[*idx].height > first_tracked_height)
+        .map(|idx| tree_locked.graph[idx].clone())
+        .collect();
+    roots.sort_by_key(|header| header.height);
+    roots
 }
 
 /// Inserts new headers as nodes and edges into the tree. Returns true if
@@ -372,6 +326,29 @@ mod tests {
         Arc::new(Mutex::new(TreeInfo { graph, index }))
     }
 
+    fn build_tree(headers: &[(u64, Header)]) -> Tree {
+        let mut graph: DiGraph<HeaderInfo, bool> = DiGraph::new();
+        let mut index: HashMap<BlockHash, petgraph::graph::NodeIndex> = HashMap::new();
+
+        for (height, header) in headers {
+            let idx = graph.add_node(HeaderInfo {
+                height: *height,
+                header: *header,
+                miner: String::new(),
+            });
+            index.insert(header.block_hash(), idx);
+        }
+
+        for idx in graph.node_indices().collect::<Vec<_>>() {
+            let prev_blockhash = graph[idx].header.prev_blockhash;
+            if let Some(&prev_idx) = index.get(&prev_blockhash) {
+                graph.update_edge(prev_idx, idx, false);
+            }
+        }
+
+        Arc::new(Mutex::new(TreeInfo { graph, index }))
+    }
+
     #[tokio::test]
     async fn test_no_forks_stable_recent_window() {
         let tree = build_linear_tree(100, 250);
@@ -452,66 +429,105 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_strip_tree_output_count_stable() {
+    async fn serialize_tree_returns_all_tracked_blocks() {
         let tree = build_linear_tree(937000, 937150);
-        let visible_heights_from_tip = 150;
-        let extra_hotspot_heights = 30;
+        let headers = serialize_tree(&tree).await;
 
-        // Call with empty tips (startup)
-        let result_startup = strip_tree(
-            &tree,
-            visible_heights_from_tip,
-            extra_hotspot_heights,
-            937000,
-            BTreeSet::new(),
-        )
-        .await;
-
-        // Call with tip heights (live)
-        let tip_heights: BTreeSet<u64> = [937150].into();
-        let result_live = strip_tree(
-            &tree,
-            visible_heights_from_tip,
-            extra_hotspot_heights,
-            937000,
-            tip_heights,
-        )
-        .await;
-
-        // Both should produce similar counts — not collapse from many to ~9
-        let diff = (result_startup.len() as i64 - result_live.len() as i64).unsigned_abs();
-        assert!(
-            diff <= 5,
-            "startup ({}) vs live ({}) header count should be close",
-            result_startup.len(),
-            result_live.len()
-        );
+        assert_eq!(headers.len(), 151);
+        assert_eq!(headers.first().expect("root").height, 937000);
+        assert_eq!(headers.last().expect("tip").height, 937150);
     }
 
     #[tokio::test]
-    async fn test_stale_tips_do_not_collapse_latest_window() {
-        let tree = build_forked_tree(937000, 937831, 937404);
-        let visible_heights_from_tip = 150;
-        let extra_hotspot_heights = 30;
-        let tip_heights: BTreeSet<u64> = [937831, 937404, 935976, 900000, 500000].into();
+    async fn serialize_tree_preserves_real_parent_relationships() {
+        let tree = build_linear_tree(100, 110);
+        let headers = serialize_tree(&tree).await;
+        let headers_by_id: HashMap<usize, HeaderInfoJson> = headers
+            .iter()
+            .cloned()
+            .map(|header| (header.id, header))
+            .collect();
 
-        let stripped = strip_tree(
-            &tree,
-            visible_heights_from_tip,
-            extra_hotspot_heights,
-            937000,
-            tip_heights,
-        )
-        .await;
-        let heights: BTreeSet<u64> = stripped.iter().map(|h| h.height).collect();
+        for header in headers {
+            if header.prev_id == usize::MAX {
+                assert_eq!(header.height, 100);
+                continue;
+            }
 
-        assert!(heights.contains(&937831), "must keep chain tip");
-        assert!(heights.contains(&937404), "must keep known fork height");
-        assert!(
-            stripped.len() >= 120,
-            "must keep a large recent window, got {} nodes",
-            stripped.len()
-        );
+            let parent = headers_by_id
+                .get(&header.prev_id)
+                .expect("serialized parent should exist");
+            assert_eq!(
+                header.height,
+                parent.height + 1,
+                "serialized edge should connect real parent-child heights"
+            );
+        }
     }
 
+    #[tokio::test]
+    async fn serialize_tree_keeps_gap_roots_visible() {
+        let complete_headers: Vec<(u64, Header)> = (100..=110)
+            .scan(BlockHash::all_zeros(), |prev_hash, height| {
+                let header = make_header(*prev_hash, height);
+                *prev_hash = header.block_hash();
+                Some((height, header))
+            })
+            .collect();
+        let missing_tree_headers: Vec<(u64, Header)> = complete_headers
+            .iter()
+            .copied()
+            .filter(|(height, _)| *height != 105 && *height != 106)
+            .collect();
+        let tree = build_tree(&missing_tree_headers);
+        let headers = serialize_tree(&tree).await;
+        let root_heights: Vec<u64> = headers
+            .iter()
+            .filter(|header| header.prev_id == usize::MAX)
+            .map(|header| header.height)
+            .collect();
+
+        assert_eq!(root_heights, vec![100, 107]);
+    }
+
+    #[tokio::test]
+    async fn unexpected_root_count_ignores_root_at_first_tracked_height() {
+        let tree = build_linear_tree(100, 110);
+
+        assert_eq!(unexpected_root_count(&tree, 100).await, 0);
+    }
+
+    #[tokio::test]
+    async fn inserting_gap_headers_clears_unexpected_roots() {
+        let complete_headers: Vec<(u64, Header)> = (100..=110)
+            .scan(BlockHash::all_zeros(), |prev_hash, height| {
+                let header = make_header(*prev_hash, height);
+                *prev_hash = header.block_hash();
+                Some((height, header))
+            })
+            .collect();
+        let missing_tree_headers: Vec<(u64, Header)> = complete_headers
+            .iter()
+            .copied()
+            .filter(|(height, _)| *height != 105 && *height != 106)
+            .collect();
+        let tree = build_tree(&missing_tree_headers);
+        let missing_headers: Vec<HeaderInfo> = complete_headers
+            .iter()
+            .copied()
+            .filter(|(height, _)| *height == 105 || *height == 106)
+            .map(|(height, header)| HeaderInfo {
+                height,
+                header,
+                miner: String::new(),
+            })
+            .collect();
+
+        assert_eq!(unexpected_root_count(&tree, 100).await, 1);
+
+        let tree_changed = insert_headers(&tree, &missing_headers).await;
+
+        assert!(tree_changed);
+        assert_eq!(unexpected_root_count(&tree, 100).await, 0);
+    }
 }

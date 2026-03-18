@@ -16,33 +16,25 @@ pub const MAX_FORKS_IN_CACHE: usize = 50;
 
 pub async fn populate_cache(network: &crate::config::Network, tree: &Tree, caches: &Caches) {
     let forks = headertree::recent_forks(tree, MAX_FORKS_IN_CACHE).await;
-    let hij = headertree::strip_tree(
-        tree,
-        network.visible_heights_from_tip,
-        network.extra_hotspot_heights,
-        network.first_tracked_height,
-        BTreeSet::new(),
-    )
-    .await;
+    let serialized_headers = headertree::serialize_tree(tree).await;
     info!(
         "populate_cache for network '{}' (id={}): headers_for_api={}, forks={}",
         network.name,
         network.id,
-        hij.len(),
+        serialized_headers.len(),
         forks.len(),
     );
     let mut locked_caches = caches.lock().await;
     let node_data: NodeData = network
         .nodes
         .iter()
-        .cloned()
-        .map(|n| {
+        .map(|node| {
             (
-                n.info().id,
+                node.info().id,
                 NodeDataJson::new(
-                    n.info().clone(),
-                    n.supports_controls(network.view_only_mode),
-                    n.supports_mining(network.view_only_mode),
+                    node.info().clone(),
+                    node.supports_controls(network.view_only_mode),
+                    node.supports_mining(network.view_only_mode),
                     &[],
                     VERSION_UNKNOWN.to_string(),
                     0,
@@ -56,7 +48,7 @@ pub async fn populate_cache(network: &crate::config::Network, tree: &Tree, cache
     locked_caches.insert(
         network.id,
         Cache {
-            header_infos_json: hij.clone(),
+            header_infos_json: serialized_headers,
             node_data,
             forks,
             metrics,

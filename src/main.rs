@@ -7,7 +7,7 @@ use rusqlite::Connection;
 use std::cmp::max;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::sync::{Mutex, broadcast};
 use tokio::task;
 use tokio::time::{Duration, Instant, interval_at, sleep};
@@ -33,7 +33,7 @@ use crate::cache::{
     update_cache,
 };
 use crate::error::{DbError, MainError};
-use crate::node::Node;
+use crate::node::{Node, fetch_missing_headers_for_unexpected_roots};
 use types::{AppState, Caches, ChainTip, Db, HeaderInfo, NetworkJson, Tree};
 
 async fn startup() -> Result<(config::Config, Db, Caches), MainError> {
@@ -91,6 +91,14 @@ async fn main() -> Result<(), MainError> {
                 MainError::Db(e)
             })?;
         let tree: Tree = Arc::new(Mutex::new(tree_info));
+        let unexpected_roots =
+            headertree::unexpected_root_count(&tree, network.first_tracked_height).await;
+        if unexpected_roots > 0 {
+            warn!(
+                "network '{}' loaded with {} unexpected roots above first_tracked_height={}",
+                network.name, unexpected_roots, network.first_tracked_height
+            );
+        }
         cache::populate_cache(&network, &tree, &caches).await;
 
         spawn_network_tasks(&network, tree, &db, &caches, &cache_changed_tx);
@@ -146,6 +154,318 @@ async fn main() -> Result<(), MainError> {
     Ok(())
 }
 
+/// Rebuilds the cached tree payload after the in-memory tree changes.
+async fn refresh_network_tree_cache(
+    tree: &Tree,
+    caches: &Caches,
+    cache_changed_tx: &broadcast::Sender<u32>,
+    network: &config::Network,
+) {
+    let header_infos_json = headertree::serialize_tree(tree).await;
+    let forks = headertree::recent_forks(tree, MAX_FORKS_IN_CACHE).await;
+
+    update_cache(
+        caches,
+        tree,
+        &network.stale_rate_ranges,
+        network.id,
+        CacheUpdate::HeaderTree {
+            header_infos_json,
+            forks,
+        },
+        cache_changed_tx,
+    )
+    .await;
+}
+
+struct NetworkPollContext<'a> {
+    tree: &'a Tree,
+    db: &'a Db,
+    caches: &'a Caches,
+    cache_changed_tx: &'a broadcast::Sender<u32>,
+    network: &'a config::Network,
+    miner_id_tx: &'a UnboundedSender<BlockHash>,
+}
+
+fn queue_miner_identification_requests(
+    miner_id_tx: &UnboundedSender<BlockHash>,
+    block_hashes: impl IntoIterator<Item = BlockHash>,
+) {
+    for block_hash in block_hashes {
+        if let Err(e) = miner_id_tx.send(block_hash) {
+            error!(
+                "Could not send a block hash into the miner identification channel: {}",
+                e
+            );
+        }
+    }
+}
+
+/// Writes fetched headers to the tree and database, then refreshes the cache if needed.
+async fn persist_headers(
+    headers: &[HeaderInfo],
+    tree: &Tree,
+    db: &Db,
+    caches: &Caches,
+    cache_changed_tx: &broadcast::Sender<u32>,
+    network: &config::Network,
+) -> usize {
+    if headers.is_empty() {
+        return 0;
+    }
+
+    let tree_changed = headertree::insert_headers(tree, headers).await;
+    let persisted_header_count = match db::write_to_db(headers, db.clone(), network.id).await {
+        Ok(_) => headers.len(),
+        Err(e) => {
+            error!(
+                "Could not write headers for network '{}' to database: {}",
+                network.name, e
+            );
+            0
+        }
+    };
+
+    if tree_changed {
+        refresh_network_tree_cache(tree, caches, cache_changed_tx, network).await;
+    }
+
+    persisted_header_count
+}
+
+/// Consumes progress batches so the UI and database update while fetching is still running.
+async fn process_header_progress_updates(
+    mut progress_rx: UnboundedReceiver<Vec<HeaderInfo>>,
+    tree: Tree,
+    db: Db,
+    caches: Caches,
+    cache_changed_tx: broadcast::Sender<u32>,
+    network: config::Network,
+) -> usize {
+    let mut total_persisted_headers = 0;
+
+    while let Some(batch) = progress_rx.recv().await {
+        total_persisted_headers +=
+            persist_headers(&batch, &tree, &db, &caches, &cache_changed_tx, &network).await;
+    }
+
+    total_persisted_headers
+}
+
+/// Loads and sorts chain tips from a node while keeping its reachability state in sync.
+async fn load_sorted_tips(
+    node: &Arc<dyn Node>,
+    ctx: &NetworkPollContext<'_>,
+) -> Option<Vec<ChainTip>> {
+    let mut tips = match node.tips().await {
+        Ok(tips) => {
+            if !is_node_reachable(ctx.caches, ctx.network.id, node.info().id).await {
+                update_cache(
+                    ctx.caches,
+                    ctx.tree,
+                    &ctx.network.stale_rate_ranges,
+                    ctx.network.id,
+                    CacheUpdate::NodeReachability {
+                        node_id: node.info().id,
+                        reachable: true,
+                    },
+                    ctx.cache_changed_tx,
+                )
+                .await;
+            }
+            tips
+        }
+        Err(e) => {
+            error!(
+                "Could not fetch chaintips from {} (endpoint={}) on network '{}' (id={}): {:?}",
+                node.info(),
+                node.endpoint(),
+                ctx.network.name,
+                ctx.network.id,
+                e
+            );
+            if is_node_reachable(ctx.caches, ctx.network.id, node.info().id).await {
+                update_cache(
+                    ctx.caches,
+                    ctx.tree,
+                    &ctx.network.stale_rate_ranges,
+                    ctx.network.id,
+                    CacheUpdate::NodeReachability {
+                        node_id: node.info().id,
+                        reachable: false,
+                    },
+                    ctx.cache_changed_tx,
+                )
+                .await;
+            }
+            return None;
+        }
+    };
+
+    tips.sort();
+    Some(tips)
+}
+
+/// Runs the normal append-only fetch path for a changed tip set.
+async fn fetch_incremental_headers(
+    node: &Arc<dyn Node>,
+    ctx: &NetworkPollContext<'_>,
+    tips: &[ChainTip],
+) -> bool {
+    let (progress_tx, progress_rx) = unbounded_channel::<Vec<HeaderInfo>>();
+    let progress_handle = task::spawn(process_header_progress_updates(
+        progress_rx,
+        ctx.tree.clone(),
+        ctx.db.clone(),
+        ctx.caches.clone(),
+        ctx.cache_changed_tx.clone(),
+        ctx.network.clone(),
+    ));
+
+    let fetch_result = node
+        .get_new_headers(
+            tips,
+            ctx.tree,
+            ctx.network.first_tracked_height,
+            Some(&progress_tx),
+        )
+        .await;
+    drop(progress_tx);
+
+    let total_persisted_headers = match progress_handle.await {
+        Ok(total_persisted_headers) => total_persisted_headers,
+        Err(e) => {
+            error!("Header processing task failed: {}", e);
+            0
+        }
+    };
+
+    if total_persisted_headers > 0 {
+        info!(
+            "Written {} headers to database for network '{}' by node {}",
+            total_persisted_headers,
+            ctx.network.name,
+            node.info()
+        );
+    }
+
+    let (_, miner_hashes) = match fetch_result {
+        Ok(result) => result,
+        Err(e) => {
+            error!(
+                "Could not fetch headers from {} (endpoint={}) on network '{}' (id={}): {}",
+                node.info(),
+                node.endpoint(),
+                ctx.network.name,
+                ctx.network.id,
+                e
+            );
+            return false;
+        }
+    };
+
+    queue_miner_identification_requests(ctx.miner_id_tx, miner_hashes);
+    true
+}
+
+async fn update_node_tips_cache(
+    ctx: &NetworkPollContext<'_>,
+    node: &Arc<dyn Node>,
+    tips: &[ChainTip],
+) {
+    update_cache(
+        ctx.caches,
+        ctx.tree,
+        &ctx.network.stale_rate_ranges,
+        ctx.network.id,
+        CacheUpdate::NodeTips {
+            node_id: node.info().id,
+            tips: tips.to_vec(),
+        },
+        ctx.cache_changed_tx,
+    )
+    .await;
+}
+
+/// Repairs disconnected tracked subtrees by fetching the headers below their roots.
+async fn repair_missing_headers_from_unexpected_roots(
+    node: &Arc<dyn Node>,
+    ctx: &NetworkPollContext<'_>,
+) {
+    let unexpected_root_count =
+        headertree::unexpected_root_count(ctx.tree, ctx.network.first_tracked_height).await;
+    if unexpected_root_count == 0 {
+        return;
+    }
+
+    info!(
+        "repairing {} unexpected roots for network '{}' using node {}",
+        unexpected_root_count,
+        ctx.network.name,
+        node.info()
+    );
+
+    let missing_headers = match fetch_missing_headers_for_unexpected_roots(
+        node.as_ref(),
+        ctx.tree,
+        ctx.network.first_tracked_height,
+        None,
+    )
+    .await
+    {
+        Ok(headers) => headers,
+        Err(e) => {
+            error!(
+                "Could not repair header gaps from {} (endpoint={}) on network '{}' (id={}): {}",
+                node.info(),
+                node.endpoint(),
+                ctx.network.name,
+                ctx.network.id,
+                e
+            );
+            return;
+        }
+    };
+
+    if missing_headers.is_empty() {
+        return;
+    }
+
+    let persisted_header_count = persist_headers(
+        &missing_headers,
+        ctx.tree,
+        ctx.db,
+        ctx.caches,
+        ctx.cache_changed_tx,
+        ctx.network,
+    )
+    .await;
+    if persisted_header_count > 0 {
+        info!(
+            "Repaired {} missing headers for network '{}' using node {}",
+            missing_headers.len(),
+            ctx.network.name,
+            node.info()
+        );
+    }
+
+    queue_miner_identification_requests(
+        ctx.miner_id_tx,
+        missing_headers
+            .iter()
+            .map(|header| header.header.block_hash()),
+    );
+
+    let remaining_unexpected_roots =
+        headertree::unexpected_root_count(ctx.tree, ctx.network.first_tracked_height).await;
+    if remaining_unexpected_roots > 0 {
+        warn!(
+            "network '{}' still has {} unexpected roots after repair attempt",
+            ctx.network.name, remaining_unexpected_roots
+        );
+    }
+}
+
 /// Spawns three background tasks per network:
 /// 1. Per-node polling task: queries tips + headers at `query_interval`
 /// 2. One-shot backfill task: identifies miners for existing blocks (5 min after start)
@@ -166,7 +486,8 @@ fn spawn_network_tasks(
         network.nodes.len()
     );
 
-    for node in network.nodes.iter().cloned() {
+    for node in &network.nodes {
+        let node = Arc::clone(node);
         let network = network.clone();
         let query_interval = network.query_interval;
         let mut interval = interval_at(
@@ -198,200 +519,33 @@ fn spawn_network_tasks(
             )
             .await;
 
+            let poll_context = NetworkPollContext {
+                tree: &tree_clone,
+                db: &db_write,
+                caches: &caches_clone,
+                cache_changed_tx: &cache_changed_tx_cloned,
+                network: &network,
+                miner_id_tx: &miner_id_tx_clone,
+            };
+
             loop {
                 interval.tick().await;
-                let mut tips = match node.tips().await {
-                    Ok(tips) => {
-                        if !is_node_reachable(&caches_clone, network.id, node.info().id).await {
-                            update_cache(
-                                &caches_clone,
-                                &tree_clone,
-                                &network.stale_rate_ranges,
-                                network.id,
-                                CacheUpdate::NodeReachability {
-                                    node_id: node.info().id,
-                                    reachable: true,
-                                },
-                                &cache_changed_tx_cloned,
-                            )
-                            .await;
-                        }
-                        tips
-                    }
-                    Err(e) => {
-                        error!(
-                            "Could not fetch chaintips from {} (endpoint={}) on network '{}' (id={}): {:?}",
-                            node.info(),
-                            node.endpoint(),
-                            network.name,
-                            network.id,
-                            e
-                        );
-                        if is_node_reachable(&caches_clone, network.id, node.info().id).await {
-                            update_cache(
-                                &caches_clone,
-                                &tree_clone,
-                                &network.stale_rate_ranges,
-                                network.id,
-                                CacheUpdate::NodeReachability {
-                                    node_id: node.info().id,
-                                    reachable: false,
-                                },
-                                &cache_changed_tx_cloned,
-                            )
-                            .await;
-                        }
-                        continue;
-                    }
+                let tips = match load_sorted_tips(&node, &poll_context).await {
+                    Some(tips) => tips,
+                    None => continue,
                 };
 
-                tips.sort();
-
                 if last_tips != tips {
-                    // Set up a channel for incremental header processing.
-                    // As headers are fetched from RPC, they are sent through this
-                    // channel and processed (inserted into tree, written to DB,
-                    // and broadcast via SSE) so the UI updates live.
-                    let (progress_tx, mut progress_rx) = unbounded_channel::<Vec<HeaderInfo>>();
-                    let tree_for_receiver = tree_clone.clone();
-                    let db_for_receiver = db_write.clone();
-                    let caches_for_receiver = caches_clone.clone();
-                    let cache_changed_tx_for_receiver = cache_changed_tx_cloned.clone();
-                    let network_for_receiver = network.clone();
-                    let tips_for_receiver = tips.clone();
-
-                    let receiver_handle = task::spawn(async move {
-                        let mut total_written: usize = 0;
-                        while let Some(batch) = progress_rx.recv().await {
-                            if batch.is_empty() {
-                                continue;
-                            }
-                            let tree_changed =
-                                headertree::insert_headers(&tree_for_receiver, &batch).await;
-
-                            match db::write_to_db(
-                                &batch,
-                                db_for_receiver.clone(),
-                                network_for_receiver.id,
-                            )
-                            .await
-                            {
-                                Ok(_) => {
-                                    total_written += batch.len();
-                                }
-                                Err(e) => {
-                                    error!(
-                                        "Could not write headers for network '{}' to database: {}",
-                                        network_for_receiver.name, e
-                                    );
-                                }
-                            }
-
-                            if tree_changed {
-                                let mut tip_heights: BTreeSet<u64> = cache::tip_heights(
-                                    network_for_receiver.id,
-                                    &caches_for_receiver,
-                                )
-                                .await;
-                                for tip in tips_for_receiver.iter() {
-                                    tip_heights.insert(tip.height);
-                                }
-                                let header_infos_json = headertree::strip_tree(
-                                    &tree_for_receiver,
-                                    network_for_receiver.visible_heights_from_tip,
-                                    network_for_receiver.extra_hotspot_heights,
-                                    network_for_receiver.first_tracked_height,
-                                    tip_heights,
-                                )
-                                .await;
-                                let forks = headertree::recent_forks(
-                                    &tree_for_receiver,
-                                    MAX_FORKS_IN_CACHE,
-                                )
-                                .await;
-
-                                update_cache(
-                                    &caches_for_receiver,
-                                    &tree_for_receiver,
-                                    &network_for_receiver.stale_rate_ranges,
-                                    network_for_receiver.id,
-                                    CacheUpdate::HeaderTree {
-                                        header_infos_json,
-                                        forks,
-                                    },
-                                    &cache_changed_tx_for_receiver,
-                                )
-                                .await;
-                            }
-                        }
-                        total_written
-                    });
-
-                    let (_, miners_needed): (Vec<HeaderInfo>, Vec<BlockHash>) = match node
-                        .get_new_headers(
-                            &tips,
-                            &tree_clone,
-                            network.first_tracked_height,
-                            Some(&progress_tx),
-                        )
-                        .await
-                    {
-                        Ok(headers) => headers,
-                        Err(e) => {
-                            error!(
-                                "Could not fetch headers from {} (endpoint={}) on network '{}' (id={}): {}",
-                                node.info(),
-                                node.endpoint(),
-                                network.name,
-                                network.id,
-                                e
-                            );
-                            continue;
-                        }
-                    };
-
-                    // Drop sender so receiver loop terminates
-                    drop(progress_tx);
-                    match receiver_handle.await {
-                        Ok(total_written) => {
-                            if total_written > 0 {
-                                info!(
-                                    "Written {} headers to database for network '{}' by node {}",
-                                    total_written,
-                                    network.name,
-                                    node.info()
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            error!("Header processing task failed: {}", e);
-                        }
-                    }
-
-                    for hash in miners_needed.iter() {
-                        if let Err(e) = miner_id_tx_clone.send(*hash) {
-                            error!(
-                                "Could not send a block hash into the miner identification channel: {}",
-                                e
-                            );
-                        }
+                    if !fetch_incremental_headers(&node, &poll_context, &tips).await {
+                        continue;
                     }
 
                     last_tips = tips.clone();
 
-                    update_cache(
-                        &caches_clone,
-                        &tree_clone,
-                        &network.stale_rate_ranges,
-                        network.id,
-                        CacheUpdate::NodeTips {
-                            node_id: node.info().id,
-                            tips: tips.clone(),
-                        },
-                        &cache_changed_tx_cloned,
-                    )
-                    .await;
+                    update_node_tips_cache(&poll_context, &node, &tips).await;
                 }
+
+                repair_missing_headers_from_unexpected_roots(&node, &poll_context).await;
             }
         });
     }
@@ -479,7 +633,8 @@ fn spawn_network_tasks(
                 }
 
                 let mut miner = MINER_UNKNOWN.to_string();
-                for node in network_clone.nodes.iter().cloned() {
+                for node in &network_clone.nodes {
+                    let node = Arc::clone(node);
                     match node
                         .get_miner_pool(
                             &header_info.header.block_hash(),

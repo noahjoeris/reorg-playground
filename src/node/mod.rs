@@ -19,6 +19,7 @@ pub use bitcoin_core::BitcoinCoreNode;
 pub use btcd::BtcdNode;
 pub use electrum::Electrum;
 pub use esplora::Esplora;
+pub(crate) use shared_fetch::fetch_missing_headers_for_unexpected_roots;
 pub use types::{HeaderLocator, NodeInfo};
 
 fn is_regtest_or_signet(network: BitcoinNetwork) -> bool {
