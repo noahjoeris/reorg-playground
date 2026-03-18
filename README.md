@@ -12,7 +12,9 @@ In normal network conditions, deeper reorg events are uncommon. That makes it ea
 With Reorg Playground, you can watch network state in near real time and deliberately produce blocks, isolate nodes, and create competing branches in development environments (Regtest and custom Signet).
 
 
-https://github.com/user-attachments/assets/3fc5175b-072d-482e-b57f-ae5e4bfe94d7
+
+https://github.com/user-attachments/assets/d5878016-3552-41db-83c7-b4acce98bbcd
+
 
 
 
