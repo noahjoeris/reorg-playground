@@ -158,8 +158,10 @@ pub struct StaleBlockRateWindowJson {
 #[serde(rename_all = "snake_case")]
 pub enum MetricUnavailableReason {
     NoReachableActiveTip,
+    NoReachableStaleTipSupport,
     TipNotInTree,
     InsufficientHistory,
+    IncompleteObservedHistory,
 }
 
 impl NetworkMetricsJson {
@@ -240,6 +242,7 @@ pub struct NodeDataJson {
     pub implementation: String,
     pub supports_controls: bool,
     pub supports_mining: bool,
+    pub supports_stale_tips: bool,
     pub tips: Vec<TipInfoJson>,
     pub last_changed_timestamp: u64,
     pub version: String,
@@ -251,6 +254,7 @@ impl NodeDataJson {
         info: NodeInfo,
         supports_controls: bool,
         supports_mining: bool,
+        supports_stale_tips: bool,
         tips: &[ChainTip],
         version: String,
         last_changed_timestamp: u64,
@@ -263,6 +267,7 @@ impl NodeDataJson {
             implementation: info.implementation,
             supports_controls,
             supports_mining,
+            supports_stale_tips,
             tips: tips.iter().map(TipInfoJson::new).collect(),
             last_changed_timestamp,
             version,

@@ -35,6 +35,7 @@ pub async fn populate_cache(network: &crate::config::Network, tree: &Tree, cache
                     node.info().clone(),
                     node.supports_controls(network.view_only_mode),
                     node.supports_mining(network.view_only_mode),
+                    node.supports_stale_tips(),
                     &[],
                     VERSION_UNKNOWN.to_string(),
                     0,
@@ -326,7 +327,16 @@ mod tests {
             let mut node_data: NodeData = BTreeMap::new();
             node_data.insert(
                 node.id,
-                NodeDataJson::new(node.clone(), false, false, &[], "".to_string(), 0, true),
+                NodeDataJson::new(
+                    node.clone(),
+                    false,
+                    false,
+                    true,
+                    &[],
+                    "".to_string(),
+                    0,
+                    true,
+                ),
             );
             locked_caches.insert(
                 network_id,
@@ -395,7 +405,16 @@ mod tests {
             let mut node_data: NodeData = BTreeMap::new();
             node_data.insert(
                 node.id,
-                NodeDataJson::new(node.clone(), false, false, &[], "".to_string(), 0, true),
+                NodeDataJson::new(
+                    node.clone(),
+                    false,
+                    false,
+                    true,
+                    &[],
+                    "".to_string(),
+                    0,
+                    true,
+                ),
             );
             locked_caches.insert(
                 network_id,

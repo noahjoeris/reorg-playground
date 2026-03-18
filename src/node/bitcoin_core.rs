@@ -218,6 +218,10 @@ impl Node for BitcoinCoreNode {
         &self.rpc_endpoint
     }
 
+    fn supports_stale_tips(&self) -> bool {
+        true
+    }
+
     async fn version(&self) -> Result<String, FetchError> {
         self.with_rpc(|rpc| rpc.get_network_info().map(|info| info.subversion))
             .await

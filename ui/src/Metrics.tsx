@@ -14,7 +14,12 @@ const STALE_RATE_BADGE_UNAVAILABLE_CLASS =
 
 type ConnectionState = 'connecting' | 'connected' | 'error' | 'closed'
 
-export type MetricUnavailableReason = 'no_reachable_active_tip' | 'tip_not_in_tree' | 'insufficient_history'
+export type MetricUnavailableReason =
+  | 'no_reachable_active_tip'
+  | 'no_reachable_stale_tip_support'
+  | 'tip_not_in_tree'
+  | 'insufficient_history'
+  | 'incomplete_observed_history'
 
 export type StaleBlockRateRange = { kind: 'rolling'; blocks: number } | { kind: 'all_time' }
 
@@ -36,8 +41,12 @@ export type NetworkMetrics = {
   stale_block_rate: StaleBlockRate
 }
 
-const STALE_RATE_REASON_LABELS: Record<Exclude<MetricUnavailableReason, 'insufficient_history'>, string> = {
+const STALE_RATE_REASON_LABELS: Record<
+  Exclude<MetricUnavailableReason, 'insufficient_history' | 'incomplete_observed_history'>,
+  string
+> = {
   no_reachable_active_tip: 'No reachable active tip is available yet.',
+  no_reachable_stale_tip_support: 'No reachable node with stale-tip visibility has reported chain tips yet.',
   tip_not_in_tree: 'The active tip is not present in retained history yet.',
 }
 
@@ -61,6 +70,10 @@ function rangeDescription(range: StaleBlockRateRange) {
 
 function unavailableReasonLabel(range: StaleBlockRateRange, reason: MetricUnavailableReason) {
   if (reason !== 'insufficient_history') {
+    if (reason === 'incomplete_observed_history') {
+      return 'Retained history contains unresolved gaps inside this window.'
+    }
+
     return STALE_RATE_REASON_LABELS[reason]
   }
 
@@ -106,7 +119,8 @@ function metricTooltip(staleBlockRate: StaleBlockRate, window: StaleBlockRateWin
         <p>Current resolved anchor: height {staleBlockRate.as_of_height.toLocaleString()}.</p>
       )}
       <p className="text-background/80">
-        This metric needs a reachable resolved tip and retained history for the selected range.
+        This metric needs a reachable resolved tip, a backend that can observe stale tips, and complete retained history
+        for the selected range.
       </p>
     </div>
   )

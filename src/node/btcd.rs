@@ -57,6 +57,10 @@ impl Node for BtcdNode {
         &self.rpc_endpoint
     }
 
+    fn supports_stale_tips(&self) -> bool {
+        true
+    }
+
     async fn version(&self) -> Result<String, FetchError> {
         Err(FetchError::BtcdRPC(JsonRPCError::NotImplemented))
     }

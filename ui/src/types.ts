@@ -62,6 +62,7 @@ export type NodeInfo = {
   implementation: string
   supports_controls: boolean
   supports_mining: boolean
+  supports_stale_tips: boolean
   tips: TipInfo[]
   last_changed_timestamp: number
   version: string

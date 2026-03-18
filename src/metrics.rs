@@ -52,6 +52,9 @@ fn calculate_network_metrics_with_tree(
 impl<'a> MetricsContext<'a> {
     fn new(tree: &'a TreeInfo, node_data: &NodeData) -> Result<Self, MetricUnavailableReason> {
         let resolved_tip = resolved_tip_index(tree, node_data)?;
+        if !has_reachable_stale_tip_observer(node_data) {
+            return Err(MetricUnavailableReason::NoReachableStaleTipSupport);
+        }
         let resolved_path = path_to_root(tree, resolved_tip);
 
         Ok(Self {
@@ -111,6 +114,12 @@ impl<'a> MetricsContext<'a> {
     ) -> StaleBlockRateWindowJson {
         let start_height = self.tree.graph[window_start].height;
         let end_height = self.tree.graph[window_end].height;
+        if has_history_gap_in_window(self.tree, start_height, end_height) {
+            return StaleBlockRateWindowJson::unavailable(
+                range,
+                MetricUnavailableReason::IncompleteObservedHistory,
+            );
+        }
         let total_headers = count_headers_in_height_range(self.tree, start_height, end_height);
         let stale_blocks = total_headers.saturating_sub(active_blocks);
 
@@ -134,6 +143,23 @@ fn count_headers_in_height_range(tree: &TreeInfo, start_height: u64, end_height:
             height >= start_height && height <= end_height
         })
         .count() as u64
+}
+
+fn has_reachable_stale_tip_observer(node_data: &NodeData) -> bool {
+    node_data.values().any(|node| {
+        node.reachable
+            && node.supports_stale_tips
+            && node.tips.iter().any(|tip| tip.status == "active")
+    })
+}
+
+/// A root above the window start means at least one ancestor inside the range
+/// is missing, so any stale-rate derived from this slice would be understated.
+fn has_history_gap_in_window(tree: &TreeInfo, start_height: u64, end_height: u64) -> bool {
+    tree.graph.externals(Direction::Incoming).any(|idx| {
+        let height = tree.graph[idx].height;
+        height > start_height && height <= end_height
+    })
 }
 
 fn resolved_tip_index(
@@ -298,7 +324,23 @@ mod tests {
         (tree, main_chain, vec![alt_8, alt_9, alt_10])
     }
 
-    fn node_data(active_hashes: &[(&str, bool)]) -> NodeData {
+    fn build_tree_with_unexpected_root() -> (Tree, Vec<BlockHash>) {
+        let (tree, main_chain) = build_linear_tree(10);
+        let mut tree_locked = tree.try_lock().expect("tree should be unlocked in tests");
+        let unexpected_root = add_block(
+            &mut tree_locked,
+            8,
+            BlockHash::from_byte_array([42; 32]),
+            2008,
+        );
+        let unexpected_child = add_block(&mut tree_locked, 9, unexpected_root, 2009);
+        add_block(&mut tree_locked, 10, unexpected_child, 2010);
+        drop(tree_locked);
+
+        (tree, main_chain)
+    }
+
+    fn node_data(active_hashes: &[(&str, bool)], supports_stale_tips: bool) -> NodeData {
         active_hashes
             .iter()
             .enumerate()
@@ -312,6 +354,7 @@ mod tests {
                         implementation: "Bitcoin Core".to_string(),
                         supports_controls: false,
                         supports_mining: false,
+                        supports_stale_tips,
                         tips: vec![TipInfoJson {
                             hash: (*hash).to_string(),
                             status: "active".to_string(),
@@ -341,7 +384,7 @@ mod tests {
     #[tokio::test]
     async fn calculates_zero_stale_rate_for_linear_chain() {
         let (tree, hashes) = build_linear_tree(10);
-        let node_data = node_data(&[(&hashes[10].to_string(), true)]);
+        let node_data = node_data(&[(&hashes[10].to_string(), true)], true);
 
         let metrics =
             calculate_network_metrics(&tree, &node_data, &[StaleRateRange::Rolling(5)]).await;
@@ -363,7 +406,7 @@ mod tests {
     #[tokio::test]
     async fn counts_all_stale_blocks_below_resolved_tip() {
         let (tree, main_chain, _stale_chain) = build_tree_with_stale_branch();
-        let node_data = node_data(&[(&main_chain[10].to_string(), true)]);
+        let node_data = node_data(&[(&main_chain[10].to_string(), true)], true);
 
         let metrics =
             calculate_network_metrics(&tree, &node_data, &[StaleRateRange::Rolling(5)]).await;
@@ -382,10 +425,13 @@ mod tests {
     #[tokio::test]
     async fn excludes_unresolved_live_splits_by_using_common_ancestor() {
         let (tree, main_chain, stale_chain) = build_tree_with_stale_branch();
-        let node_data = node_data(&[
-            (&main_chain[10].to_string(), true),
-            (&stale_chain[2].to_string(), true),
-        ]);
+        let node_data = node_data(
+            &[
+                (&main_chain[10].to_string(), true),
+                (&stale_chain[2].to_string(), true),
+            ],
+            true,
+        );
 
         let metrics =
             calculate_network_metrics(&tree, &node_data, &[StaleRateRange::Rolling(3)]).await;
@@ -401,10 +447,13 @@ mod tests {
     #[tokio::test]
     async fn ignores_unreachable_nodes_when_resolving_tip() {
         let (tree, main_chain, stale_chain) = build_tree_with_stale_branch();
-        let node_data = node_data(&[
-            (&main_chain[10].to_string(), true),
-            (&stale_chain[2].to_string(), false),
-        ]);
+        let node_data = node_data(
+            &[
+                (&main_chain[10].to_string(), true),
+                (&stale_chain[2].to_string(), false),
+            ],
+            true,
+        );
 
         let metrics =
             calculate_network_metrics(&tree, &node_data, &[StaleRateRange::Rolling(5)]).await;
@@ -420,7 +469,7 @@ mod tests {
     #[tokio::test]
     async fn calculates_all_time_metric_from_retained_history() {
         let (tree, main_chain, _stale_chain) = build_tree_with_stale_branch();
-        let node_data = node_data(&[(&main_chain[10].to_string(), true)]);
+        let node_data = node_data(&[(&main_chain[10].to_string(), true)], true);
 
         let metrics =
             calculate_network_metrics(&tree, &node_data, &[StaleRateRange::AllTime]).await;
@@ -442,7 +491,7 @@ mod tests {
     #[tokio::test]
     async fn marks_window_unavailable_when_history_is_too_shallow() {
         let (tree, hashes) = build_linear_tree(10);
-        let node_data = node_data(&[(&hashes[10].to_string(), true)]);
+        let node_data = node_data(&[(&hashes[10].to_string(), true)], true);
 
         let metrics =
             calculate_network_metrics(&tree, &node_data, &[StaleRateRange::Rolling(12)]).await;
@@ -460,7 +509,7 @@ mod tests {
     #[tokio::test]
     async fn returns_unavailable_when_no_reachable_active_tip_exists() {
         let (tree, hashes) = build_linear_tree(10);
-        let node_data = node_data(&[(&hashes[10].to_string(), false)]);
+        let node_data = node_data(&[(&hashes[10].to_string(), false)], true);
 
         let metrics =
             calculate_network_metrics(&tree, &node_data, &[StaleRateRange::Rolling(5)]).await;
@@ -478,10 +527,13 @@ mod tests {
     #[tokio::test]
     async fn returns_unavailable_when_active_tip_is_missing_from_tree() {
         let (tree, _hashes) = build_linear_tree(10);
-        let node_data = node_data(&[(
-            "0000000000000000000000000000000000000000000000000000000000000001",
+        let node_data = node_data(
+            &[(
+                "0000000000000000000000000000000000000000000000000000000000000001",
+                true,
+            )],
             true,
-        )]);
+        );
 
         let metrics =
             calculate_network_metrics(&tree, &node_data, &[StaleRateRange::Rolling(5)]).await;
@@ -493,6 +545,64 @@ mod tests {
                 StaleBlockRateRangeJson::Rolling { blocks: 5 },
                 MetricUnavailableReason::TipNotInTree,
             )
+        );
+    }
+
+    #[tokio::test]
+    async fn returns_unavailable_when_no_reachable_node_can_report_stale_tips() {
+        let (tree, hashes) = build_linear_tree(10);
+        let node_data = node_data(&[(&hashes[10].to_string(), true)], false);
+
+        let metrics =
+            calculate_network_metrics(&tree, &node_data, &[StaleRateRange::Rolling(5)]).await;
+
+        assert_eq!(metrics.stale_block_rate.as_of_height, None);
+        assert_eq!(
+            window(&metrics, StaleBlockRateRangeJson::Rolling { blocks: 5 }),
+            &StaleBlockRateWindowJson::unavailable(
+                StaleBlockRateRangeJson::Rolling { blocks: 5 },
+                MetricUnavailableReason::NoReachableStaleTipSupport,
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn marks_window_unavailable_when_history_contains_gap_inside_window() {
+        let (tree, main_chain) = build_tree_with_unexpected_root();
+        let node_data = node_data(&[(&main_chain[10].to_string(), true)], true);
+
+        let metrics =
+            calculate_network_metrics(&tree, &node_data, &[StaleRateRange::Rolling(5)]).await;
+
+        assert_eq!(metrics.stale_block_rate.as_of_height, Some(10));
+        assert_eq!(
+            window(&metrics, StaleBlockRateRangeJson::Rolling { blocks: 5 }),
+            &StaleBlockRateWindowJson::unavailable(
+                StaleBlockRateRangeJson::Rolling { blocks: 5 },
+                MetricUnavailableReason::IncompleteObservedHistory,
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn allows_window_when_history_gap_starts_at_window_boundary() {
+        let (tree, main_chain) = build_tree_with_unexpected_root();
+        let node_data = node_data(&[(&main_chain[10].to_string(), true)], true);
+
+        let metrics =
+            calculate_network_metrics(&tree, &node_data, &[StaleRateRange::Rolling(3)]).await;
+
+        assert_eq!(metrics.stale_block_rate.as_of_height, Some(10));
+        assert_eq!(
+            window(&metrics, StaleBlockRateRangeJson::Rolling { blocks: 3 }),
+            &StaleBlockRateWindowJson {
+                range: StaleBlockRateRangeJson::Rolling { blocks: 3 },
+                stale_blocks: 3,
+                active_blocks: 3,
+                rate: 1.0,
+                available: true,
+                reason: None,
+            }
         );
     }
 }

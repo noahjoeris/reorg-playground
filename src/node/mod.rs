@@ -42,6 +42,11 @@ pub trait Node: Send + Sync {
     fn info(&self) -> &NodeInfo;
     fn endpoint(&self) -> &str;
 
+    /// Returns whether this backend can report non-active chain tips.
+    fn supports_stale_tips(&self) -> bool {
+        false
+    }
+
     fn supports_controls(&self, view_only_mode: bool) -> bool {
         !view_only_mode
             && self.info().implementation == "Bitcoin Core"
