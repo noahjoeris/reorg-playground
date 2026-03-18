@@ -2,9 +2,6 @@
 
 # Reorg Playground
 
-> 🚧 **In Progress**  
-> This project is under active development. Features, APIs, and setup steps may change.
-
 Reorg Playground is a Bitcoin tool for exploring forks, tip divergence, and reorg behavior across multiple node backends.
 
 In normal network conditions, deeper reorg events are uncommon. That makes it easy for fork/reorg edge cases in wallets, explorers, and other Bitcoin-integrated systems to slip through pre-production testing.
