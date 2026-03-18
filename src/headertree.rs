@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::collections::HashMap;
 
 use crate::types::{Fork, HeaderInfo, HeaderInfoJson, Tree};
 
@@ -243,16 +244,31 @@ pub async fn insert_headers(tree: &Tree, new_headers: &[HeaderInfo]) -> bool {
             tree_changed = true;
         }
     }
+
+    let children_by_prev: HashMap<_, Vec<NodeIndex>> =
+        tree_locked
+            .graph
+            .node_indices()
+            .fold(HashMap::new(), |mut acc, idx| {
+                acc.entry(tree_locked.graph[idx].header.prev_blockhash)
+                    .or_default()
+                    .push(idx);
+                acc
+            });
+
     for new in new_headers {
         let idx_new = *tree_locked
             .index
             .get(&new.header.block_hash())
             .expect("header was just inserted or already present");
-        let idx_prev = match tree_locked.index.get(&new.header.prev_blockhash) {
-            Some(idx) => *idx,
-            None => continue,
-        };
-        tree_locked.graph.update_edge(idx_prev, idx_new, false);
+        if let Some(&idx_prev) = tree_locked.index.get(&new.header.prev_blockhash) {
+            tree_locked.graph.update_edge(idx_prev, idx_new, false);
+        }
+        if let Some(children) = children_by_prev.get(&new.header.block_hash()) {
+            for idx_child in children {
+                tree_locked.graph.update_edge(idx_new, *idx_child, false);
+            }
+        }
     }
     tree_changed
 }
@@ -497,4 +513,5 @@ mod tests {
             stripped.len()
         );
     }
+
 }

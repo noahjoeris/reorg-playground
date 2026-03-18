@@ -321,12 +321,18 @@ mod tests {
 
     #[test]
     fn select_block_time_uses_current_time_when_chain_time_is_stale() {
-        assert_eq!(select_block_time(1_598_918_402, 1_778_000_000), 1_778_000_000);
+        assert_eq!(
+            select_block_time(1_598_918_402, 1_778_000_000),
+            1_778_000_000
+        );
     }
 
     #[test]
     fn select_block_time_waits_for_future_min_time() {
-        assert_eq!(select_block_time(1_778_000_100, 1_778_000_000), 1_778_000_100);
+        assert_eq!(
+            select_block_time(1_778_000_100, 1_778_000_000),
+            1_778_000_100
+        );
     }
 
     #[test]

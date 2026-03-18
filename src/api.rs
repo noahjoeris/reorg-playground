@@ -19,7 +19,10 @@ use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use crate::config::Network;
 use crate::error::FetchError;
 use crate::node::Node;
-use crate::types::{AppState, DataChanged, DataJsonResponse, NetworksJsonResponse};
+use crate::types::{
+    AppState, DataChanged, DataJsonResponse, MetricUnavailableReason, NetworkMetricsJson,
+    NetworksJsonResponse,
+};
 
 fn get_network(state: &AppState, network_id: u32) -> Option<&Network> {
     state
@@ -45,10 +48,25 @@ pub async fn data_response(
         Some(cache) => Json(DataJsonResponse {
             header_infos: cache.header_infos_json.clone(),
             nodes: cache.node_data.values().cloned().collect(),
+            metrics: cache.metrics.clone(),
         }),
         None => Json(DataJsonResponse {
             header_infos: vec![],
             nodes: vec![],
+            metrics: get_network(&state, network).map_or(
+                NetworkMetricsJson {
+                    stale_block_rate: crate::types::StaleBlockRateJson {
+                        as_of_height: None,
+                        windows: vec![],
+                    },
+                },
+                |configured_network| {
+                    NetworkMetricsJson::unavailable(
+                        &configured_network.stale_rate_ranges,
+                        MetricUnavailableReason::NoReachableActiveTip,
+                    )
+                },
+            ),
         }),
     }
 }
@@ -397,9 +415,12 @@ fn map_control_error_code(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Network, NetworkType};
+    use crate::config::{Network, NetworkType, StaleRateRange};
     use crate::node::{HeaderLocator, Node, NodeInfo};
-    use crate::types::{Caches, ChainTip, HeaderInfo, Tree};
+    use crate::types::{
+        Cache, Caches, ChainTip, HeaderInfo, MetricUnavailableReason, NetworkMetricsJson,
+        StaleBlockRateJson, StaleBlockRateRangeJson, StaleBlockRateWindowJson, Tree,
+    };
     use async_trait::async_trait;
     use bitcoincore_rpc::bitcoin;
     use bitcoincore_rpc::bitcoin::BlockHash;
@@ -590,8 +611,7 @@ mod tests {
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
             view_only_mode: false,
-            signet_challenge: None,
-            signet_nbits: None,
+            stale_rate_ranges: test_stale_rate_ranges(),
             nodes: vec![Arc::new(node) as Arc<dyn Node>],
         }]
     }
@@ -611,13 +631,46 @@ mod tests {
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
             view_only_mode,
-            signet_challenge: None,
-            signet_nbits: None,
+            stale_rate_ranges: test_stale_rate_ranges(),
             nodes: nodes
                 .into_iter()
                 .map(|node| Arc::new(node) as Arc<dyn Node>)
                 .collect(),
         }]
+    }
+
+    fn test_stale_rate_ranges() -> Vec<StaleRateRange> {
+        vec![
+            StaleRateRange::Rolling(100),
+            StaleRateRange::Rolling(1000),
+            StaleRateRange::AllTime,
+        ]
+    }
+
+    fn sample_metrics() -> NetworkMetricsJson {
+        NetworkMetricsJson {
+            stale_block_rate: StaleBlockRateJson {
+                as_of_height: Some(123),
+                windows: vec![
+                    StaleBlockRateWindowJson {
+                        range: StaleBlockRateRangeJson::Rolling { blocks: 1000 },
+                        stale_blocks: 1,
+                        active_blocks: 1000,
+                        rate: 0.001,
+                        available: true,
+                        reason: None,
+                    },
+                    StaleBlockRateWindowJson {
+                        range: StaleBlockRateRangeJson::AllTime,
+                        stale_blocks: 2,
+                        active_blocks: 1200,
+                        rate: 2.0 / 1200.0,
+                        available: true,
+                        reason: None,
+                    },
+                ],
+            },
+        }
     }
 
     async fn p2p_state_for_network(state: &AppState, network_id: u32) -> NodeP2PStateResponse {
@@ -633,6 +686,57 @@ mod tests {
             .find(|node| node.node_id == node_id)
             .expect("node should exist in p2p response")
             .active
+    }
+
+    #[tokio::test]
+    async fn data_response_includes_cached_metrics() {
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok);
+        let state = test_state(single_node_network(1, node));
+
+        {
+            let mut caches = state.caches.lock().await;
+            caches.insert(
+                1,
+                Cache {
+                    header_infos_json: vec![],
+                    node_data: BTreeMap::new(),
+                    forks: vec![],
+                    metrics: sample_metrics(),
+                    recent_miners: vec![],
+                },
+            );
+        }
+
+        let Json(response) = data_response(Path(1), State(state)).await;
+
+        assert_eq!(response.metrics, sample_metrics());
+    }
+
+    #[tokio::test]
+    async fn data_response_uses_configured_windows_when_cache_is_missing() {
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok);
+        let state = test_state(single_node_network(1, node));
+
+        let Json(response) = data_response(Path(1), State(state)).await;
+
+        assert_eq!(response.metrics.stale_block_rate.as_of_height, None);
+        assert_eq!(
+            response.metrics.stale_block_rate.windows,
+            vec![
+                StaleBlockRateWindowJson::unavailable(
+                    StaleBlockRateRangeJson::Rolling { blocks: 100 },
+                    MetricUnavailableReason::NoReachableActiveTip,
+                ),
+                StaleBlockRateWindowJson::unavailable(
+                    StaleBlockRateRangeJson::Rolling { blocks: 1000 },
+                    MetricUnavailableReason::NoReachableActiveTip,
+                ),
+                StaleBlockRateWindowJson::unavailable(
+                    StaleBlockRateRangeJson::AllTime,
+                    MetricUnavailableReason::NoReachableActiveTip,
+                ),
+            ]
+        );
     }
 
     #[tokio::test]
@@ -687,8 +791,7 @@ mod tests {
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
             view_only_mode: false,
-            signet_challenge: None,
-            signet_nbits: None,
+            stale_rate_ranges: test_stale_rate_ranges(),
             nodes: vec![],
         }]);
 
@@ -730,8 +833,8 @@ mod tests {
 
     #[tokio::test]
     async fn mine_block_rejected_when_node_not_a_miner() {
-        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok)
-            .with_supports_mining(false);
+        let node =
+            MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok).with_supports_mining(false);
         let state = test_state(single_node_network(1, node.clone()));
 
         let (status, body) = mine_block(
@@ -829,8 +932,7 @@ mod tests {
             extra_hotspot_heights: 0,
             network_type: NetworkType::Regtest,
             view_only_mode: false,
-            signet_challenge: None,
-            signet_nbits: None,
+            stale_rate_ranges: test_stale_rate_ranges(),
             nodes: vec![],
         }]);
 

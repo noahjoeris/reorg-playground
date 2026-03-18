@@ -23,6 +23,7 @@ mod config;
 mod db;
 mod error;
 mod headertree;
+mod metrics;
 mod node;
 mod rss;
 mod types;
@@ -186,6 +187,8 @@ fn spawn_network_tasks(
         task::spawn(async move {
             update_cache(
                 &caches_clone,
+                &tree_clone,
+                &network.stale_rate_ranges,
                 network.id,
                 CacheUpdate::NodeVersion {
                     node_id: node.info().id,
@@ -202,6 +205,8 @@ fn spawn_network_tasks(
                         if !is_node_reachable(&caches_clone, network.id, node.info().id).await {
                             update_cache(
                                 &caches_clone,
+                                &tree_clone,
+                                &network.stale_rate_ranges,
                                 network.id,
                                 CacheUpdate::NodeReachability {
                                     node_id: node.info().id,
@@ -225,6 +230,8 @@ fn spawn_network_tasks(
                         if is_node_reachable(&caches_clone, network.id, node.info().id).await {
                             update_cache(
                                 &caches_clone,
+                                &tree_clone,
+                                &network.stale_rate_ranges,
                                 network.id,
                                 CacheUpdate::NodeReachability {
                                     node_id: node.info().id,
@@ -305,6 +312,8 @@ fn spawn_network_tasks(
 
                                 update_cache(
                                     &caches_for_receiver,
+                                    &tree_for_receiver,
+                                    &network_for_receiver.stale_rate_ranges,
                                     network_for_receiver.id,
                                     CacheUpdate::HeaderTree {
                                         header_infos_json,
@@ -372,6 +381,8 @@ fn spawn_network_tasks(
 
                     update_cache(
                         &caches_clone,
+                        &tree_clone,
+                        &network.stale_rate_ranges,
                         network.id,
                         CacheUpdate::NodeTips {
                             node_id: node.info().id,
@@ -522,6 +533,8 @@ fn spawn_network_tasks(
                 }
                 update_cache(
                     &caches_clone,
+                    &tree_clone,
+                    &network_for_miner.stale_rate_ranges,
                     network_for_miner.id,
                     CacheUpdate::HeaderMiner { header_info },
                     &cache_changed_tx_clone,

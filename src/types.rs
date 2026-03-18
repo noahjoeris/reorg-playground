@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use bitcoincore_rpc::bitcoin::hashes::hex::parse::HexToArrayError;
 
-use crate::config::{Network, NetworkType};
+use crate::config::{Network, NetworkType, StaleRateRange};
 use crate::node::NodeInfo;
 
 use bitcoincore_rpc::bitcoin::BlockHash;
@@ -24,6 +24,7 @@ pub struct Cache {
     pub header_infos_json: Vec<HeaderInfoJson>,
     pub node_data: NodeData,
     pub forks: Vec<Fork>,
+    pub metrics: NetworkMetricsJson,
     /// Since strip_tree and identifying miners runs in parallel,
     /// the strip_tree result might not contain a miner yet. Keeping
     /// recent miners here and use + manage them when updating the cache.
@@ -121,6 +122,91 @@ impl HeaderInfoJson {
 pub struct DataJsonResponse {
     pub header_infos: Vec<HeaderInfoJson>,
     pub nodes: Vec<NodeDataJson>,
+    pub metrics: NetworkMetricsJson,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct NetworkMetricsJson {
+    pub stale_block_rate: StaleBlockRateJson,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct StaleBlockRateJson {
+    pub as_of_height: Option<u64>,
+    pub windows: Vec<StaleBlockRateWindowJson>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum StaleBlockRateRangeJson {
+    Rolling { blocks: u64 },
+    AllTime,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct StaleBlockRateWindowJson {
+    pub range: StaleBlockRateRangeJson,
+    pub stale_blocks: u64,
+    pub active_blocks: u64,
+    pub rate: f64,
+    pub available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<MetricUnavailableReason>,
+}
+
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MetricUnavailableReason {
+    NoReachableActiveTip,
+    TipNotInTree,
+    InsufficientHistory,
+}
+
+impl NetworkMetricsJson {
+    pub fn unavailable(
+        stale_rate_ranges: &[StaleRateRange],
+        reason: MetricUnavailableReason,
+    ) -> NetworkMetricsJson {
+        NetworkMetricsJson {
+            stale_block_rate: StaleBlockRateJson {
+                as_of_height: None,
+                windows: stale_rate_ranges
+                    .iter()
+                    .map(|range| {
+                        StaleBlockRateWindowJson::unavailable(
+                            StaleBlockRateRangeJson::from(range),
+                            reason,
+                        )
+                    })
+                    .collect(),
+            },
+        }
+    }
+}
+
+impl From<&StaleRateRange> for StaleBlockRateRangeJson {
+    fn from(range: &StaleRateRange) -> Self {
+        match range {
+            StaleRateRange::Rolling(blocks) => StaleBlockRateRangeJson::Rolling { blocks: *blocks },
+            StaleRateRange::AllTime => StaleBlockRateRangeJson::AllTime,
+        }
+    }
+}
+
+impl StaleBlockRateWindowJson {
+    pub fn unavailable(
+        range: StaleBlockRateRangeJson,
+        reason: MetricUnavailableReason,
+    ) -> StaleBlockRateWindowJson {
+        StaleBlockRateWindowJson {
+            range,
+            stale_blocks: 0,
+            active_blocks: 0,
+            rate: 0.0,
+            available: false,
+            reason: Some(reason),
+        }
+    }
 }
 
 #[derive(Serialize, Clone, Eq, Hash, PartialEq, Debug)]

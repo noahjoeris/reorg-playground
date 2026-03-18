@@ -169,6 +169,7 @@ function App() {
           blockCount={processedBlocks.length}
           reachableNodes={reachableNodes}
           totalNodes={totalNodes}
+          metrics={data?.metrics ?? null}
           connectionStatus={connectionStatus}
         />
 

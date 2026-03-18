@@ -3,7 +3,9 @@ use std::fmt;
 
 use log::{debug, info};
 
+use crate::config::StaleRateRange;
 use crate::headertree;
+use crate::metrics;
 use crate::types::{
     Cache, Caches, ChainTip, Fork, HeaderInfo, HeaderInfoJson, NodeData, NodeDataJson, Tree,
 };
@@ -49,12 +51,15 @@ pub async fn populate_cache(network: &crate::config::Network, tree: &Tree, cache
             )
         })
         .collect();
+    let metrics =
+        metrics::calculate_network_metrics(tree, &node_data, &network.stale_rate_ranges).await;
     locked_caches.insert(
         network.id,
         Cache {
             header_infos_json: hij.clone(),
             node_data,
             forks,
+            metrics,
             recent_miners: vec![],
         },
     );
@@ -149,11 +154,14 @@ pub async fn is_node_reachable(caches: &Caches, network_id: u32, node_id: u32) -
 
 pub async fn update_cache(
     caches: &Caches,
+    tree: &Tree,
+    stale_rate_ranges: &[StaleRateRange],
     network_id: u32,
     update: CacheUpdate,
     cache_changed_tx: &tokio::sync::broadcast::Sender<u32>,
 ) {
     debug!("updating cache with: {}", update);
+    let mut node_data_for_metrics: Option<NodeData> = None;
     let mut locked_cache = caches.lock().await;
     let network = locked_cache
         .get(&network_id)
@@ -201,6 +209,7 @@ pub async fn update_cache(
             locked_cache.entry(network_id).and_modify(|e| {
                 e.header_infos_json = new_header_infos_map.into_values().collect();
                 e.forks = forks;
+                node_data_for_metrics = Some(e.node_data.clone());
             });
         }
         CacheUpdate::NodeTips { node_id, tips } => {
@@ -220,6 +229,7 @@ pub async fn update_cache(
                     .node_data
                     .entry(node_id)
                     .and_modify(|e| e.tips(&relevant_tips));
+                node_data_for_metrics = Some(network.node_data.clone());
             });
         }
         CacheUpdate::NodeReachability { node_id, reachable } => {
@@ -228,6 +238,7 @@ pub async fn update_cache(
                     .node_data
                     .entry(node_id)
                     .and_modify(|e| e.reachable(reachable));
+                node_data_for_metrics = Some(network.node_data.clone());
             });
         }
         CacheUpdate::NodeVersion { node_id, version } => {
@@ -238,6 +249,15 @@ pub async fn update_cache(
                     .and_modify(|e| e.version(version));
             });
         }
+    }
+    drop(locked_cache);
+
+    if let Some(node_data) = node_data_for_metrics {
+        let metrics = metrics::calculate_network_metrics(tree, &node_data, stale_rate_ranges).await;
+        let mut locked_cache = caches.lock().await;
+        locked_cache.entry(network_id).and_modify(|cache| {
+            cache.metrics = metrics.clone();
+        });
     }
 
     match cache_changed_tx.send(network_id) {
@@ -257,11 +277,23 @@ pub async fn update_cache(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::StaleRateRange;
     use crate::node::NodeInfo;
     use bitcoincore_rpc::bitcoin::Network as BitcoinNetwork;
+    use petgraph::graph::DiGraph;
     use std::collections::BTreeMap;
+    use std::collections::HashMap;
     use std::sync::Arc;
     use tokio::sync::{Mutex, broadcast};
+
+    use crate::types::{
+        MetricUnavailableReason, NetworkMetricsJson, StaleBlockRateRangeJson,
+        StaleBlockRateWindowJson, TreeInfo,
+    };
+
+    fn test_stale_rate_ranges() -> Vec<StaleRateRange> {
+        vec![StaleRateRange::Rolling(1000), StaleRateRange::AllTime]
+    }
 
     async fn get_test_node_reachable(caches: &Caches, net_id: u32, node_id: u32) -> bool {
         let locked_caches = caches.lock().await;
@@ -274,11 +306,19 @@ mod tests {
             .reachable
     }
 
+    fn empty_test_tree() -> Tree {
+        Arc::new(Mutex::new(TreeInfo {
+            graph: DiGraph::new(),
+            index: HashMap::new(),
+        }))
+    }
+
     #[tokio::test]
     async fn test_node_reachable() {
         let network_id: u32 = 0;
         let (dummy_sender, _) = broadcast::channel(2);
         let caches: Caches = Arc::new(Mutex::new(BTreeMap::new()));
+        let tree = empty_test_tree();
         let node = NodeInfo {
             id: 0,
             name: "".to_string(),
@@ -302,6 +342,10 @@ mod tests {
                     header_infos_json: vec![],
                     node_data,
                     forks: vec![],
+                    metrics: NetworkMetricsJson::unavailable(
+                        &test_stale_rate_ranges(),
+                        MetricUnavailableReason::NoReachableActiveTip,
+                    ),
                     recent_miners: vec![],
                 },
             );
@@ -310,6 +354,8 @@ mod tests {
 
         update_cache(
             &caches,
+            &tree,
+            &test_stale_rate_ranges(),
             network_id,
             CacheUpdate::NodeReachability {
                 node_id: node.id,
@@ -322,6 +368,8 @@ mod tests {
 
         update_cache(
             &caches,
+            &tree,
+            &test_stale_rate_ranges(),
             network_id,
             CacheUpdate::NodeReachability {
                 node_id: node.id,
@@ -331,5 +379,78 @@ mod tests {
         )
         .await;
         assert!(get_test_node_reachable(&caches, network_id, node.id).await);
+    }
+
+    #[tokio::test]
+    async fn update_cache_recomputes_metrics_for_reachability_changes() {
+        let network_id: u32 = 0;
+        let (dummy_sender, _) = broadcast::channel(2);
+        let caches: Caches = Arc::new(Mutex::new(BTreeMap::new()));
+        let tree = empty_test_tree();
+        let node = NodeInfo {
+            id: 0,
+            name: "".to_string(),
+            description: "".to_string(),
+            implementation: "".to_string(),
+            network_type: BitcoinNetwork::Regtest,
+            supports_mining: true,
+            signet_challenge: None,
+            signet_nbits: None,
+        };
+
+        {
+            let mut locked_caches = caches.lock().await;
+            let mut node_data: NodeData = BTreeMap::new();
+            node_data.insert(
+                node.id,
+                NodeDataJson::new(node.clone(), false, false, &[], "".to_string(), 0, true),
+            );
+            locked_caches.insert(
+                network_id,
+                Cache {
+                    header_infos_json: vec![],
+                    node_data,
+                    forks: vec![],
+                    metrics: NetworkMetricsJson::unavailable(
+                        &test_stale_rate_ranges(),
+                        MetricUnavailableReason::NoReachableActiveTip,
+                    ),
+                    recent_miners: vec![],
+                },
+            );
+        }
+
+        update_cache(
+            &caches,
+            &tree,
+            &test_stale_rate_ranges(),
+            network_id,
+            CacheUpdate::NodeReachability {
+                node_id: node.id,
+                reachable: false,
+            },
+            &dummy_sender,
+        )
+        .await;
+
+        let locked_caches = caches.lock().await;
+        let metrics = &locked_caches
+            .get(&network_id)
+            .expect("network should be present")
+            .metrics;
+        assert_eq!(metrics.stale_block_rate.as_of_height, None);
+        assert_eq!(
+            metrics.stale_block_rate.windows,
+            vec![
+                StaleBlockRateWindowJson::unavailable(
+                    StaleBlockRateRangeJson::Rolling { blocks: 1000 },
+                    MetricUnavailableReason::NoReachableActiveTip,
+                ),
+                StaleBlockRateWindowJson::unavailable(
+                    StaleBlockRateRangeJson::AllTime,
+                    MetricUnavailableReason::NoReachableActiveTip,
+                ),
+            ]
+        );
     }
 }

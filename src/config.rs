@@ -16,6 +16,22 @@ pub const ENVVAR_CONFIG_FILE: &str = "CONFIG_FILE";
 const DEFAULT_CONFIG: &str = "config.toml";
 const DEFAULT_USE_REST: bool = true;
 const DEFAULT_RPC_PORT: u16 = 8332;
+const DEFAULT_STALE_RATE_WINDOWS: [u64; 2] = [100, 1000];
+const DEFAULT_STALE_RATE_INCLUDE_ALL_TIME: bool = true;
+
+fn default_stale_rate_windows() -> Vec<u64> {
+    DEFAULT_STALE_RATE_WINDOWS.to_vec()
+}
+
+fn default_stale_rate_include_all_time() -> bool {
+    DEFAULT_STALE_RATE_INCLUDE_ALL_TIME
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StaleRateRange {
+    Rolling(u64),
+    AllTime,
+}
 
 #[derive(Clone, Deserialize, Serialize, Debug)]
 pub enum NetworkType {
@@ -64,6 +80,10 @@ struct TomlNetwork {
     network_type: NetworkType,
     #[serde(default)]
     view_only_mode: bool,
+    #[serde(default = "default_stale_rate_windows")]
+    stale_rate_windows: Vec<u64>,
+    #[serde(default = "default_stale_rate_include_all_time")]
+    stale_rate_include_all_time: bool,
     signet_challenge: Option<String>,
     signet_nbits: Option<String>,
     nodes: Vec<TomlNode>,
@@ -80,8 +100,7 @@ pub struct Network {
     pub extra_hotspot_heights: usize,
     pub network_type: NetworkType,
     pub view_only_mode: bool,
-    pub signet_challenge: Option<String>,
-    pub signet_nbits: Option<String>,
+    pub stale_rate_ranges: Vec<StaleRateRange>,
     pub nodes: Vec<Arc<dyn Node>>,
 }
 
@@ -89,7 +108,7 @@ impl fmt::Display for TomlNetwork {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Network (id={}, description='{}', name='{}', query_interval={}, first_tracked_height={}, visible_heights_from_tip={}, extra_hotspot_heights={}, view_only_mode={}, nodes={:?})",
+            "Network (id={}, description='{}', name='{}', query_interval={}, first_tracked_height={}, visible_heights_from_tip={}, extra_hotspot_heights={}, view_only_mode={}, stale_rate_windows={:?}, stale_rate_include_all_time={}, nodes={:?})",
             self.id,
             self.description,
             self.name,
@@ -98,6 +117,8 @@ impl fmt::Display for TomlNetwork {
             self.visible_heights_from_tip,
             self.extra_hotspot_heights,
             self.view_only_mode,
+            self.stale_rate_windows,
+            self.stale_rate_include_all_time,
             self.nodes,
         )
     }
@@ -274,6 +295,11 @@ fn parse_toml_network(
     toml_network: &TomlNetwork,
     nodes: Vec<Arc<dyn Node>>,
 ) -> Result<Network, ConfigError> {
+    let stale_rate_ranges = normalize_stale_rate_ranges(
+        toml_network.stale_rate_windows.clone(),
+        toml_network.stale_rate_include_all_time,
+    )?;
+
     Ok(Network {
         id: toml_network.id,
         name: toml_network.name.clone(),
@@ -284,10 +310,35 @@ fn parse_toml_network(
         extra_hotspot_heights: toml_network.extra_hotspot_heights,
         network_type: toml_network.network_type.clone(),
         view_only_mode: toml_network.view_only_mode,
-        signet_challenge: toml_network.signet_challenge.clone(),
-        signet_nbits: toml_network.signet_nbits.clone(),
+        stale_rate_ranges,
         nodes,
     })
+}
+
+fn normalize_stale_rate_ranges(
+    mut rolling_windows: Vec<u64>,
+    include_all_time: bool,
+) -> Result<Vec<StaleRateRange>, ConfigError> {
+    if rolling_windows.iter().any(|window| *window == 0) {
+        return Err(ConfigError::InvalidStaleRateWindows);
+    }
+
+    rolling_windows.sort_unstable();
+    rolling_windows.dedup();
+
+    let mut ranges: Vec<StaleRateRange> = rolling_windows
+        .into_iter()
+        .map(StaleRateRange::Rolling)
+        .collect();
+    if include_all_time {
+        ranges.push(StaleRateRange::AllTime);
+    }
+
+    if ranges.is_empty() {
+        return Err(ConfigError::InvalidStaleRateWindows);
+    }
+
+    Ok(ranges)
 }
 
 fn parse_toml_node(
@@ -447,6 +498,95 @@ mod tests {
                 panic!("view_only_mode=true should parse: {}", e);
             }
         }
+    }
+
+    #[test]
+    fn uses_default_stale_rate_windows() {
+        let config = parse_example_with(|config| {
+            network_mut(config, 0)
+                .as_table_mut()
+                .expect("network should be a table")
+                .remove("stale_rate_windows");
+            network_mut(config, 0)
+                .as_table_mut()
+                .expect("network should be a table")
+                .remove("stale_rate_include_all_time");
+        })
+        .expect("config should parse");
+
+        assert_eq!(
+            config.networks[0].stale_rate_ranges,
+            vec![
+                StaleRateRange::Rolling(100),
+                StaleRateRange::Rolling(1000),
+                StaleRateRange::AllTime,
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_custom_stale_rate_windows() {
+        let config = parse_example_with(|config| {
+            network_mut(config, 0)
+                .as_table_mut()
+                .expect("network should be a table")
+                .insert(
+                    "stale_rate_windows".to_string(),
+                    Value::Array(vec![
+                        Value::Integer(2016),
+                        Value::Integer(144),
+                        Value::Integer(2016),
+                    ]),
+                );
+            network_mut(config, 0)
+                .as_table_mut()
+                .expect("network should be a table")
+                .insert(
+                    "stale_rate_include_all_time".to_string(),
+                    Value::Boolean(false),
+                );
+        })
+        .expect("config should parse");
+
+        assert_eq!(
+            config.networks[0].stale_rate_ranges,
+            vec![StaleRateRange::Rolling(144), StaleRateRange::Rolling(2016)]
+        );
+    }
+
+    #[test]
+    fn supports_all_time_only_metrics() {
+        let config = parse_example_with(|config| {
+            let network = network_mut(config, 0)
+                .as_table_mut()
+                .expect("network should be a table");
+            network.insert("stale_rate_windows".to_string(), Value::Array(vec![]));
+            network.insert(
+                "stale_rate_include_all_time".to_string(),
+                Value::Boolean(true),
+            );
+        })
+        .expect("config should parse");
+
+        assert_eq!(
+            config.networks[0].stale_rate_ranges,
+            vec![StaleRateRange::AllTime]
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_stale_rate_windows() {
+        let result = parse_example_with(|config| {
+            network_mut(config, 0)
+                .as_table_mut()
+                .expect("network should be a table")
+                .insert(
+                    "stale_rate_windows".to_string(),
+                    Value::Array(vec![Value::Integer(0)]),
+                );
+        });
+
+        assert!(matches!(result, Err(ConfigError::InvalidStaleRateWindows)));
     }
 
     #[test]

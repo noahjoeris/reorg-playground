@@ -143,7 +143,6 @@ impl BitcoinCoreNode {
     pub(super) fn node_info(&self) -> &NodeInfo {
         &self.info
     }
-
 }
 
 #[async_trait]

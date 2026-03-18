@@ -1,3 +1,5 @@
+import type { NetworkMetrics } from './Metrics'
+
 // Sentinel value for blocks with no parent (Rust's usize::MAX = 18446744073709551615).
 // JS loses precision and rounds to 18446744073709552000, but JSON.parse produces
 // the same rounded float, so equality checks still work.
@@ -83,6 +85,7 @@ export type NetworksResponse = {
 export type DataResponse = {
   header_infos: HeaderInfo[]
   nodes: NodeInfo[]
+  metrics: NetworkMetrics
 }
 
 export type DataChangedEvent = {

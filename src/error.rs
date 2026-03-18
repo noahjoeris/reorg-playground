@@ -137,6 +137,7 @@ pub enum ConfigError {
     NoBitcoinCoreRpcAuth,
     NoBtcdRpcAuth,
     NoNetworks,
+    InvalidStaleRateWindows,
     UnknownImplementation,
     DuplicateNodeId,
     DuplicateNetworkId,
@@ -158,6 +159,10 @@ impl fmt::Display for ConfigError {
             ),
             ConfigError::NoBtcdRpcAuth => write!(f, "no values for rpc_user and rpc_password"),
             ConfigError::NoNetworks => write!(f, "no networks defined in the configuration"),
+            ConfigError::InvalidStaleRateWindows => write!(
+                f,
+                "stale_rate_windows must contain positive block counts unless stale_rate_include_all_time is enabled"
+            ),
             ConfigError::UnknownImplementation => write!(
                 f,
                 "the node client_implementation defined in the config is not supported"
@@ -189,6 +194,7 @@ impl error::Error for ConfigError {
             ConfigError::NoBtcdRpcAuth => None,
             ConfigError::CookieFileDoesNotExist => None,
             ConfigError::NoNetworks => None,
+            ConfigError::InvalidStaleRateWindows => None,
             ConfigError::UnknownImplementation => None,
             ConfigError::TomlError(ref e) => Some(e),
             ConfigError::ReadError(ref e) => Some(e),

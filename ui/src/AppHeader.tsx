@@ -1,17 +1,12 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import type { ThemePreference } from '@/hooks/useTheme'
-import { ConnectionStatus } from './ConnectionStatus'
+import { Metrics, type NetworkMetrics } from './Metrics'
 import { NetworkSelector } from './NetworkSelector'
 import { ThemeToggle } from './ThemeToggle'
 import type { ConnectionStatus as ConnectionState, Network } from './types'
 
 const REPO_URL = 'https://github.com/noahjoeris/reorg-playground'
-
-function MetricsDivider() {
-  return <Separator orientation="vertical" className="h-3.5 bg-border/70" />
-}
 
 export function AppHeader({
   networks,
@@ -22,6 +17,7 @@ export function AppHeader({
   blockCount,
   reachableNodes,
   totalNodes,
+  metrics,
   connectionStatus,
 }: {
   networks: Network[]
@@ -32,6 +28,7 @@ export function AppHeader({
   blockCount: number
   reachableNodes: number
   totalNodes: number
+  metrics: NetworkMetrics | null
   connectionStatus: ConnectionState
 }) {
   return (
@@ -70,17 +67,13 @@ export function AppHeader({
           </div>
         </div>
 
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          <span className="rounded-full border border-border/80 bg-card/70 px-2.5 py-px text-xs tracking-wide">
-            <span>{blockCount.toLocaleString()}</span> blocks
-          </span>
-          <MetricsDivider />
-          <span className="rounded-full border border-border/80 bg-card/70 px-2.5 py-px text-xs tracking-wide">
-            {reachableNodes}/{totalNodes} nodes reachable
-          </span>
-          <MetricsDivider />
-          <ConnectionStatus status={connectionStatus} />
-        </div>
+        <Metrics
+          blockCount={blockCount}
+          reachableNodes={reachableNodes}
+          totalNodes={totalNodes}
+          metrics={metrics}
+          connectionStatus={connectionStatus}
+        />
       </div>
     </header>
   )

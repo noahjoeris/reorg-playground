@@ -1,7 +1,7 @@
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Orbitron:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
-@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @theme inline {
   --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
@@ -44,29 +44,29 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  --background: #F5F8FD;
-  --foreground: #1F2938;
-  --muted: #EAF0F8;
-  --muted-foreground: #5E6C83;
-  --border: #D8E1EE;
-  --accent: #3B82F6;
-  --accent-foreground: #EFF6FF;
+  --background: #f5f8fd;
+  --foreground: #1f2938;
+  --muted: #eaf0f8;
+  --muted-foreground: #5e6c83;
+  --border: #d8e1ee;
+  --accent: #3b82f6;
+  --accent-foreground: #eff6ff;
 
-  --card: #FAFCFF;
-  --card-foreground: #1F2938;
-  --popover: #FFFFFF;
-  --popover-foreground: #1F2938;
-  --primary: #3B82F6;
-  --primary-foreground: #EFF6FF;
-  --secondary: #DCE8FF;
-  --secondary-foreground: #24477A;
-  --destructive: #DC4C4C;
-  --destructive-foreground: #FFF5F5;
-  --input: #E1EAF8;
-  --ring: #3B82F6;
-  --success: #2F9D64;
-  --warning: #C99400;
-  --info: #3B82F6;
+  --card: #fafcff;
+  --card-foreground: #1f2938;
+  --popover: #ffffff;
+  --popover-foreground: #1f2938;
+  --primary: #3b82f6;
+  --primary-foreground: #eff6ff;
+  --secondary: #dce8ff;
+  --secondary-foreground: #24477a;
+  --destructive: #dc4c4c;
+  --destructive-foreground: #fff5f5;
+  --input: #e1eaf8;
+  --ring: #3b82f6;
+  --success: #2f9d64;
+  --warning: #c99400;
+  --info: #3b82f6;
   --radius: 0.875rem;
 
   --color-tip-active: var(--success);
@@ -76,47 +76,47 @@
   --color-tip-headers-only: var(--warning);
   --color-tip-unknown: var(--muted-foreground);
 
-  --surface-canvas: linear-gradient(160deg, #F2F7FF, #FAFCFF);
-  --surface-panel: linear-gradient(165deg, #FFFFFFEB, #F0F6FFF0);
-  --surface-panel-strong: linear-gradient(170deg, #F8FBFFF5, #ECF3FFF5);
-  --surface-glow: #3B82F638;
-  --elevation-soft: 0 14px 30px -20px #1D2F5136;
+  --surface-canvas: linear-gradient(160deg, #f2f7ff, #fafcff);
+  --surface-panel: linear-gradient(165deg, #ffffffeb, #f0f6fff0);
+  --surface-panel-strong: linear-gradient(170deg, #f8fbfff5, #ecf3fff5);
+  --surface-glow: #3b82f638;
+  --elevation-soft: 0 14px 30px -20px #1d2f5136;
   --elevation-lift: 0 20px 46px -24px #14264052;
 }
 
-:root[data-theme='dark'] {
+:root[data-theme="dark"] {
   color-scheme: dark;
 
-  --background: #0F1623;
-  --foreground: #E8EEF8;
-  --muted: #1C2738;
-  --muted-foreground: #AAB9CF;
-  --border: #32445D;
-  --accent: #66A8FF;
-  --accent-foreground: #0C1A30;
+  --background: #0f1623;
+  --foreground: #e8eef8;
+  --muted: #1c2738;
+  --muted-foreground: #aab9cf;
+  --border: #32445d;
+  --accent: #66a8ff;
+  --accent-foreground: #0c1a30;
 
   --card: #172235;
-  --card-foreground: #E8EEF8;
-  --popover: #1A2740;
-  --popover-foreground: #E8EEF8;
-  --primary: #66A8FF;
-  --primary-foreground: #0C1A30;
-  --secondary: #314A71;
-  --secondary-foreground: #E8EEF8;
-  --destructive: #EE7676;
-  --destructive-foreground: #2C0F0F;
+  --card-foreground: #e8eef8;
+  --popover: #1a2740;
+  --popover-foreground: #e8eef8;
+  --primary: #66a8ff;
+  --primary-foreground: #0c1a30;
+  --secondary: #314a71;
+  --secondary-foreground: #e8eef8;
+  --destructive: #ee7676;
+  --destructive-foreground: #2c0f0f;
   --input: #243248;
-  --ring: #66A8FF;
-  --success: #4BC77D;
-  --warning: #E3B13F;
-  --info: #7FB6FF;
+  --ring: #66a8ff;
+  --success: #4bc77d;
+  --warning: #e3b13f;
+  --info: #7fb6ff;
 
-  --surface-canvas: linear-gradient(170deg, #121A2B, #0B1220);
-  --surface-panel: linear-gradient(165deg, #1D2C44E0, #162338D9);
-  --surface-panel-strong: linear-gradient(166deg, #243652F2, #18283FF7);
-  --surface-glow: #66A8FF4A;
-  --elevation-soft: 0 16px 34px -22px #000000B8;
-  --elevation-lift: 0 26px 54px -24px #000000D9;
+  --surface-canvas: linear-gradient(170deg, #121a2b, #0b1220);
+  --surface-panel: linear-gradient(165deg, #1d2c44e0, #162338d9);
+  --surface-panel-strong: linear-gradient(166deg, #243652f2, #18283ff7);
+  --surface-glow: #66a8ff4a;
+  --elevation-soft: 0 16px 34px -22px #000000b8;
+  --elevation-lift: 0 26px 54px -24px #000000d9;
 }
 
 *,

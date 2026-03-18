@@ -19,6 +19,8 @@ visible_heights_from_tip = 500 # Base tip window size (heights counted backward 
 extra_hotspot_heights = 100 # Additional hotspot heights (fork/tip anchors) kept outside the base tip window.
 network_type = "Mainnet" # Mainnet | Testnet | Signet | Regtest
 view_only_mode = false # Only affects node controls on Regtest/custom Signet.
+stale_rate_windows = [100, 1000] # Rolling windows for stale-rate summary. Make sure to set first_tracked_height in approriately for this.
+stale_rate_include_all_time = true
 
     [[networks.nodes]]
     id = 0
@@ -44,11 +46,13 @@ id = 1
 name = "Testnet"
 description = "Bitcoin Testnet"
 query_interval = 15
-first_tracked_height = 4841135 
-visible_heights_from_tip = 500 
+first_tracked_height = 4841135
+visible_heights_from_tip = 500
 extra_hotspot_heights = 100
 network_type = "Testnet"
 view_only_mode = false # Only affects node controls on Regtest/custom Signet.
+stale_rate_windows = [100, 1000]
+stale_rate_include_all_time = true
 
     [[networks.nodes]]
     id = 0
@@ -67,11 +71,13 @@ id = 2
 name = "Regtest"
 description = "Bitcoin Regtest (local dev)"
 query_interval = 1
-first_tracked_height = 0 
-visible_heights_from_tip = 100 
-extra_hotspot_heights = 20 
+first_tracked_height = 0
+visible_heights_from_tip = 100
+extra_hotspot_heights = 20
 network_type = "Regtest"
 view_only_mode = false # Only affects node controls on Regtest/custom Signet.
+stale_rate_windows = [100, 1000]
+stale_rate_include_all_time = true
 # Note: You can deploy two local regtest nodes via scripts/start-regtest-nodes.sh, or use docker-compose.test-env.yml.
 
     [[networks.nodes]]
@@ -112,6 +118,8 @@ network_type = "Signet"
 signet_challenge = "5121031b14827738eaf41b67f50a2ddd9d0b08907236f3d0e79bef7fc9ea7b866a3ca821036739e2fc3681d2ef7f9afc0bb2f8964c4f61b6c30f4642cc0322e57967d31f3652ae" # Custom signet challenge script (hex). Must match the bitcoind -signetchallenge.
 signet_nbits = "1e0377ae" # Custom signet mining difficulty target (hex). Passed to the signet miner.
 view_only_mode = false # Enables app controls for Signet mining and P2P toggling.
+stale_rate_windows = [100, 1000]
+stale_rate_include_all_time = true
 # Note: scripts/start-signet-nodes.sh boots Miner A, Miner B, and Observer C for the custom Signet cluster, or use docker-compose.test-env.yml.
 
     [[networks.nodes]]

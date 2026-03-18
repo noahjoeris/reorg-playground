@@ -1,6 +1,6 @@
 import { Moon, Sun } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { type ThemePreference } from '@/hooks/useTheme'
+import type { ThemePreference } from '@/hooks/useTheme'
 
 const LABELS: Record<ThemePreference, string> = {
   light: 'Use dark theme',

@@ -18,6 +18,8 @@ visible_heights_from_tip = 8000 # Base tip window size (heights counted backward
 extra_hotspot_heights = 5000 # Additional hotspot heights (fork/tip anchors) kept outside the base tip window.
 network_type = "Mainnet" # Mainnet | Testnet | Signet | Regtest
 view_only_mode = false # Only affects node controls on Regtest/custom Signet.
+stale_rate_windows = [100, 1000]
+stale_rate_include_all_time = true
 
     [[networks.nodes]]
     id = 0
@@ -48,6 +50,8 @@ visible_heights_from_tip = 5000
 extra_hotspot_heights = 500
 network_type = "Testnet"
 view_only_mode = false # Only affects node controls on Regtest/custom Signet.
+stale_rate_windows = [100, 1000]
+stale_rate_include_all_time = true
 
     [[networks.nodes]]
     id = 0
