@@ -9,7 +9,7 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { ThemePreference } from '@/hooks/useTheme'
 import { BlockTreeNode } from './BlockTreeNode'
 import { FoldedBlockTreeNode } from './FoldedBlockTreeNode'
@@ -19,6 +19,45 @@ import type { FlowNodeType } from './tree'
 import { type ConnectionStatus, type Network, type NodeInfo, TIP_STATUS_COLORS, type TipStatusEntry } from './types'
 
 const nodeTypes = { block: BlockTreeNode, mine: MineTreeNode, folded: FoldedBlockTreeNode }
+const ACTIVE_TIP_FOCUS_ZOOM = 1
+const ACTIVE_TIP_FOCUS_DURATION_MS = 400
+
+type ActiveTipNodeData = {
+  height: number
+  tipStatuses?: TipStatusEntry[]
+}
+
+/**
+ * Resolves the highest rendered block node that is currently marked as an active tip.
+ * Ties prefer the block recognized as active by more nodes, then preserve input order.
+ */
+function findHighestActiveTipNode(nodes: FlowNodeType[]): Node<ActiveTipNodeData, 'block'> | null {
+  let bestNode: Node<ActiveTipNodeData, 'block'> | null = null
+  let bestHeight = -Infinity
+  let bestActiveNodeCount = -Infinity
+
+  for (const node of nodes) {
+    if (node.type !== 'block') continue
+
+    const activeTipStatus = (node.data as ActiveTipNodeData).tipStatuses?.find(
+      tipStatus => tipStatus.status === 'active',
+    )
+    if (!activeTipStatus) continue
+
+    const nodeHeight = (node.data as ActiveTipNodeData).height
+    const activeNodeCount = activeTipStatus.nodeNames.length
+    const isBetterCandidate =
+      nodeHeight > bestHeight || (nodeHeight === bestHeight && activeNodeCount > bestActiveNodeCount)
+
+    if (!isBetterCandidate) continue
+
+    bestNode = node as Node<ActiveTipNodeData, 'block'>
+    bestHeight = nodeHeight
+    bestActiveNodeCount = activeNodeCount
+  }
+
+  return bestNode
+}
 
 function CenteredState({ title, message }: { title: string; message: string }) {
   return (
@@ -57,9 +96,11 @@ export function BlockGraph({
   network: Network | null
   allNodes: NodeInfo[]
 }) {
+  const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null)
   const showConnectionWarning = connectionStatus === 'error' || connectionStatus === 'closed'
 
   const fitViewOptions = useMemo(() => ({ padding: 0.25 }), [])
+  const activeTipNode = useMemo(() => findHighestActiveTipNode(nodes), [nodes])
 
   const defaultEdgeOptions = useMemo(
     () => ({
@@ -71,10 +112,24 @@ export function BlockGraph({
 
   const onInit: OnInit = useCallback(
     (instance: ReactFlowInstance) => {
+      setReactFlowInstance(instance)
       instance.fitView(fitViewOptions)
     },
     [fitViewOptions],
   )
+
+  const handleGoToActiveTip = useCallback(() => {
+    if (!reactFlowInstance || !activeTipNode) return
+
+    const targetZoom = Math.max(reactFlowInstance.getZoom(), ACTIVE_TIP_FOCUS_ZOOM)
+    const targetX = activeTipNode.position.x + (activeTipNode.width ?? 0) / 2
+    const targetY = activeTipNode.position.y + (activeTipNode.height ?? 0) / 2
+
+    void reactFlowInstance.setCenter(targetX, targetY, {
+      zoom: targetZoom,
+      duration: ACTIVE_TIP_FOCUS_DURATION_MS,
+    })
+  }, [activeTipNode, reactFlowInstance])
 
   const minimapNodeColor = useCallback((node: Node) => {
     if (node.type === 'block') {
@@ -135,6 +190,8 @@ export function BlockGraph({
               <GraphToolbar
                 network={network}
                 allNodes={allNodes}
+                canGoToActiveTip={activeTipNode !== null}
+                onGoToActiveTip={handleGoToActiveTip}
                 showFoldToggle={showFoldToggle}
                 globalCollapsed={globalCollapsed}
                 onToggleGlobalCollapsed={onToggleGlobalCollapsed}

@@ -1,5 +1,6 @@
 import { Panel } from '@xyflow/react'
 import { Button } from '@/components/ui/button'
+import { ActiveTipToolbarButton } from './ActiveTipToolbarButton'
 import { TriggerReorgButton } from './TriggerReorgButton'
 import type { Network, NodeInfo } from './types'
 
@@ -8,12 +9,16 @@ const TOOLBAR_BUTTON = 'rounded-full border-border/80 bg-card/90 px-3 font-semib
 export function GraphToolbar({
   network,
   allNodes,
+  canGoToActiveTip,
+  onGoToActiveTip,
   showFoldToggle,
   globalCollapsed,
   onToggleGlobalCollapsed,
 }: {
   network: Network | null
   allNodes: NodeInfo[]
+  canGoToActiveTip: boolean
+  onGoToActiveTip: () => void
   showFoldToggle: boolean
   globalCollapsed: boolean
   onToggleGlobalCollapsed: () => void
@@ -22,6 +27,11 @@ export function GraphToolbar({
     <Panel position="top-right" className="m-2">
       <div className="flex items-center gap-1.5">
         {network && <TriggerReorgButton network={network} nodes={allNodes} buttonClassName={TOOLBAR_BUTTON} />}
+        <ActiveTipToolbarButton
+          canGoToActiveTip={canGoToActiveTip}
+          onGoToActiveTip={onGoToActiveTip}
+          buttonClassName={TOOLBAR_BUTTON}
+        />
         {showFoldToggle && (
           <Button
             type="button"
