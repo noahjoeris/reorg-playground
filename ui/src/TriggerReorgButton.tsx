@@ -1,4 +1,4 @@
-import { CheckIcon, CircleIcon, Loader2Icon, Shuffle, XIcon } from 'lucide-react'
+import { CheckIcon, CircleIcon, Shuffle, XIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
 import { type ReorgState, useTriggerReorg, type WorkflowStep } from '@/hooks/useTriggerReorg'
 import { cn, isRegtestOrSignet } from '@/utils'
 import type { Network, NodeInfo } from './types'
@@ -61,7 +62,7 @@ function StepIcon({ status }: { status: StepStatus }) {
     case 'done':
       return <CheckIcon className="size-4 text-emerald-500" />
     case 'active':
-      return <Loader2Icon className="size-4 animate-spin text-foreground" />
+      return <Spinner className="size-4 text-foreground" />
     case 'error':
       return <XIcon className="size-4 text-destructive" />
     case 'pending':

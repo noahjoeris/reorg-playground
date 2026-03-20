@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Spinner } from '@/components/ui/spinner'
 import { useMineBlock } from '@/hooks/useMineBlock'
 import { cn } from '@/utils'
 import type { Network, NodeInfo, ProcessedBlock } from './types'
@@ -32,6 +33,7 @@ export function MineBlockButton({
     isEnabledByNodeId: miningIsEnabledByNodeId,
   } = useMineBlock(network, activeTipNodes)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [pendingNodeId, setPendingNodeId] = useState<number | null>(null)
 
   if (!activeTip) return null
 
@@ -40,8 +42,13 @@ export function MineBlockButton({
   if (mineEnabledNodes.length === 0) return null
 
   const handleMine = async (node: NodeInfo) => {
-    await mine(node)
-    setDialogOpen(false)
+    setPendingNodeId(node.id)
+    try {
+      await mine(node)
+      setDialogOpen(false)
+    } finally {
+      setPendingNodeId(null)
+    }
   }
 
   const handleClick = () => {
@@ -63,8 +70,9 @@ export function MineBlockButton({
           handleClick()
         }}
         disabled={loading || !miningControlFeatureEnabled}
+        aria-label={loading ? 'Mining block' : label}
       >
-        {loading ? 'Mining...' : label}
+        {loading ? <Spinner className="size-3" /> : label}
       </Button>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -84,8 +92,9 @@ export function MineBlockButton({
                 className="w-full justify-start"
                 onClick={() => handleMine(node)}
                 disabled={loading || !(miningIsEnabledByNodeId[node.id] ?? false)}
+                aria-label={pendingNodeId === node.id ? `Mining on ${node.name}` : node.name}
               >
-                {loading ? 'Mining...' : node.name}
+                {pendingNodeId === node.id ? <Spinner className="size-3" /> : node.name}
                 <span className="ml-auto text-xs text-muted-foreground">{node.description}</span>
               </Button>
             ))}

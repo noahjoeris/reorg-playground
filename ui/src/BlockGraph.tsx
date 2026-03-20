@@ -10,6 +10,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useCallback, useMemo, useState } from 'react'
+import { Spinner } from '@/components/ui/spinner'
 import type { ThemePreference } from '@/hooks/useTheme'
 import { BlockTreeNode } from './BlockTreeNode'
 import { FoldedBlockTreeNode } from './FoldedBlockTreeNode'
@@ -59,12 +60,23 @@ function findHighestActiveTipNode(nodes: FlowNodeType[]): Node<ActiveTipNodeData
   return bestNode
 }
 
-function CenteredState({ title, message }: { title: string; message: string }) {
+function CenteredState({
+  title,
+  message,
+  showSpinner = false,
+}: {
+  title: string
+  message: string
+  showSpinner?: boolean
+}) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 text-center">
       <div className="panel-glass-strong max-w-lg rounded-2xl px-6 py-7">
+        {showSpinner && <Spinner className="mx-auto size-6 text-muted-foreground" />}
         <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Network State</p>
-        <h2 className="mt-2 text-lg font-semibold text-foreground">{title}</h2>
+        <h2 className={showSpinner ? 'mt-3 text-lg font-semibold text-foreground' : 'mt-2 text-lg font-semibold text-foreground'}>
+          {title}
+        </h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{message}</p>
       </div>
     </div>
@@ -89,7 +101,7 @@ export function BlockGraph({
   themePreference: ThemePreference
   connectionStatus: ConnectionStatus
   staleError: string | null
-  emptyState: { title: string; message: string } | null
+  emptyState: { title: string; message: string; showSpinner?: boolean } | null
   showFoldToggle: boolean
   globalCollapsed: boolean
   onToggleGlobalCollapsed: () => void
@@ -160,7 +172,7 @@ export function BlockGraph({
 
         <div className="h-full">
           {emptyState ? (
-            <CenteredState title={emptyState.title} message={emptyState.message} />
+            <CenteredState title={emptyState.title} message={emptyState.message} showSpinner={emptyState.showSpinner} />
           ) : (
             <ReactFlow
               className="bg-transparent"

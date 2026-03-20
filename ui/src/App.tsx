@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Spinner } from '@/components/ui/spinner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useNetworkData } from '@/hooks/useNetworkData'
 import { useNetworks } from '@/hooks/useNetworks'
@@ -105,7 +106,8 @@ function App() {
   if (networksLoading) {
     return (
       <div className="relative isolate flex h-screen items-center justify-center bg-background px-6 text-center">
-        <div className="panel-glass-strong rounded-2xl px-6 py-5">
+        <div className="panel-glass-strong flex flex-col items-center gap-3 rounded-2xl px-6 py-5">
+          <Spinner className="size-6 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">Loading network configuration...</p>
         </div>
       </div>
@@ -135,12 +137,16 @@ function App() {
   const totalNodes = data?.nodes.length ?? 0
   const reachableNodes = data?.nodes.filter(node => node.reachable).length ?? 0
 
-  function getEmptyState(): { title: string; message: string } | null {
+  function getEmptyState(): { title: string; message: string; showSpinner?: boolean } | null {
     if (selectedNetworkId === null) {
       return { title: 'Select a network', message: 'Choose a configured network to load blockchain data.' }
     }
     if (dataLoading && !data) {
-      return { title: 'Loading chain data', message: 'Fetching latest tips and headers from configured nodes.' }
+      return {
+        title: 'Loading chain data',
+        message: 'Fetching latest tips and headers from configured nodes.',
+        showSpinner: true,
+      }
     }
     if (dataError && !data) {
       return { title: 'Failed to load chain data', message: dataError }
