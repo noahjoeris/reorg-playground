@@ -8,12 +8,7 @@ In normal network conditions, deeper reorg events are uncommon. That makes it ea
 
 With Reorg Playground, you can watch network state in near real time and deliberately produce blocks, isolate nodes, and create competing branches in development environments (Regtest and custom Signet).
 
-
-
 https://github.com/user-attachments/assets/d5878016-3552-41db-83c7-b4acce98bbcd
-
-
-
 
 ## Getting Started
 
@@ -29,6 +24,7 @@ Use this when you want to deploy just the app and point it at your own nodes.
 4. Stop it: `docker compose down`
 
 This stack starts:
+
 - `backend`
 - `web`
 
@@ -56,11 +52,11 @@ Use this when you want the bundled Regtest and custom Signet cluster for local e
    ```
 
 This stack starts:
+
 - `backend`
 - `web`
 - 2 connected Bitcoin Core Regtest nodes (`bitcoind-regtest-a`, `bitcoind-regtest-b`)
 - 3 Bitcoin Core custom Signet nodes: Miner A (`bitcoind-signet-a`), Miner B (`bitcoind-signet-b`), and Observer C (`bitcoind-signet-c`)
-
 
 ### 3. Host-Managed Regtest and Custom Signet
 
@@ -84,6 +80,7 @@ For custom Signet, start the 3-node setup using:
 ```
 
 This setup starts:
+
 - `Miner A`
 - `Miner B`
 - `Observer C`
@@ -94,19 +91,21 @@ Host-managed Signet mining defaults to `./bitcoin-core/contrib/signet/miner`. Ov
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-
 ## Features
 
-- Interactive block-header graph with forks/tips and collapse/expand behavior for dense sections.
+- Interactive block-header graph with forks, competing tips, and collapsible sections.
 - Multi-backend node observation (Bitcoin Core, Electrum, Esplora, btcd) via RPC/REST.
-- Node controls for Bitcoin Core (Regtest mining, Regtest/custom Signet P2P toggle), configurable per network via `view_only_mode`.
-- Config-driven network/node setup through `config.toml`.
-- Header data collection and persistence in SQLite.
-- Modern, responsive UI for exploring forks and node state.
+- Observed stale-rate metric with configurable rolling windows and all-time view.
+- `Trigger Reorg` button for Bitcoin Core on Regtest and custom Signet: pick the node and depth, then create a reorg in two clicks.
+- Bitcoin Core node controls for Regtest and custom Signet: mine blocks and enable/disable P2P connectivity. Set `view_only_mode` per network to disable these controls.
+- Config-driven networks and nodes via `config.toml`.
+- Header history persisted in SQLite.
+- Responsive UI for forks, node health, and network state.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Supported node backends
+
 - Bitcoin Core
   - uses `getchaintips` RPC to fetch active and stale block tips
   - supports node interactions like mining a block or P2P isolation.
@@ -122,8 +121,10 @@ Host-managed Signet mining defaults to `./bitcoin-core/contrib/signet/miner`. Ov
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Known Limitations
-- App-triggered mining is currently supported only for Bitcoin Core (on Regtest and custom Signet); other backends remain read-only for mining.
+
+- App-triggered mining and `Trigger Reorg` are currently supported only for Bitcoin Core on Regtest and custom Signet.
 - P2P toggling works for Bitcoin Core on Regtest and custom Signet; controls can still be disabled per network via `view_only_mode`.
+- Observed stale-rate metrics require a reachable backend with stale-tip visibility and enough retained history for the configured windows.
 - Backend node data collection still relies on per-network polling (via config param `query_interval`), while frontend updates are pushed via SSE invalidation + snapshot refresh.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -136,10 +137,7 @@ Backend:
 Frontend:
 ![React](https://img.shields.io/badge/React-1F2937?style=for-the-badge&logo=react&logoColor=white) ![Vite](https://img.shields.io/badge/Vite-1F2937?style=for-the-badge&logo=vite&logoColor=white) ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-1F2937?style=for-the-badge&logo=tailwindcss&logoColor=white) ![shadcn/ui](https://img.shields.io/badge/shadcn%2Fui-1F2937?style=for-the-badge&logo=shadcnui&logoColor=white) ![React Flow](https://img.shields.io/badge/React_Flow-1F2937?style=for-the-badge&logo=xyflow&logoColor=white)
 
-
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
 
 ## Top Contributors
 
