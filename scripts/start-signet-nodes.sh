@@ -6,6 +6,7 @@ RPC_USER="reorg-playground"
 RPC_PASSWORD="reorg-playground"
 RPC_TIMEOUT=5
 MINER_WALLET="miner"
+SIGNET_ENABLE_DEFAULT_PEERS="${SIGNET_ENABLE_DEFAULT_PEERS:-1}"
 
 SIGNET_CHALLENGE="5121031b14827738eaf41b67f50a2ddd9d0b08907236f3d0e79bef7fc9ea7b866a3ca821036739e2fc3681d2ef7f9afc0bb2f8964c4f61b6c30f4642cc0322e57967d31f3652ae"
 MINER_A_DESCRIPTOR="multi(1,cUziKDUPDUDf8XUb9MURQ15Nj71poddNYY4XvUnL4wDqXD2Tj26A,036739e2fc3681d2ef7f9afc0bb2f8964c4f61b6c30f4642cc0322e57967d31f36)"
@@ -176,7 +177,7 @@ start_bitcoind() {
 
   mkdir -p "$data_dir"
 
-  if [[ -n "$connect_p2p_port" ]]; then
+  if [[ "$SIGNET_ENABLE_DEFAULT_PEERS" == "1" && -n "$connect_p2p_port" ]]; then
     args+=(-connect="$LOCALHOST:$connect_p2p_port")
   fi
 
@@ -212,10 +213,14 @@ main() {
   ensure_signer_descriptor "Miner A" "$MINER_A_RPC_PORT" "$MINER_A_DESCRIPTOR"
   ensure_signer_descriptor "Miner B" "$MINER_B_RPC_PORT" "$MINER_B_DESCRIPTOR"
 
-  echo "Waiting for peer connections..."
-  wait_for_peer_count "Miner A" "$MINER_A_RPC_PORT" 1
-  wait_for_peer_count "Miner B" "$MINER_B_RPC_PORT" 1
-  wait_for_peer_count "Observer C" "$OBSERVER_RPC_PORT" 2
+  if [[ "$SIGNET_ENABLE_DEFAULT_PEERS" == "1" ]]; then
+    echo "Waiting for peer connections..."
+    wait_for_peer_count "Miner A" "$MINER_A_RPC_PORT" 1
+    wait_for_peer_count "Miner B" "$MINER_B_RPC_PORT" 1
+    wait_for_peer_count "Observer C" "$OBSERVER_RPC_PORT" 2
+  else
+    echo "Signet nodes started without default peer links."
+  fi
 
   print_status "Miner A" "$MINER_A_RPC_PORT"
   print_status "Miner B" "$MINER_B_RPC_PORT"

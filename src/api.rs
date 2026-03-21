@@ -24,14 +24,14 @@ use crate::types::{
     NetworksJsonResponse,
 };
 
-fn get_network(state: &AppState, network_id: u32) -> Option<&Network> {
+pub(crate) fn get_network(state: &AppState, network_id: u32) -> Option<&Network> {
     state
         .networks
         .iter()
         .find(|network| network.id == network_id)
 }
 
-fn get_node(network: &Network, node_id: u32) -> Option<&dyn Node> {
+pub(crate) fn get_node(network: &Network, node_id: u32) -> Option<&dyn Node> {
     network
         .nodes
         .iter()
@@ -273,17 +273,16 @@ pub async fn mine_block(
                 "Mine block failed for network={} node={}: {}",
                 network_id, body.node_id, e
             );
-            let error_code = map_control_error_code(
-                &e,
-                "MINE_BACKEND_UNSUPPORTED",
-                "MINE_INVALID_REQUEST",
-                "MINE_EXECUTION_FAILED",
-            );
+            let error_code = match &e {
+                FetchError::NotSupported { .. } => "MINE_BACKEND_UNSUPPORTED",
+                FetchError::DataError(_) => "MINE_INVALID_REQUEST",
+                _ => "MINE_EXECUTION_FAILED",
+            };
             (
                 StatusCode::BAD_REQUEST,
                 Json(MineBlockResponse {
                     success: false,
-                    error: Some(error_code),
+                    error: Some(error_code.to_string()),
                 }),
             )
         }
@@ -357,29 +356,31 @@ pub async fn set_network_active(
     };
 
     match node.set_p2p_network_active(body.active).await {
-        Ok(_) => (
-            StatusCode::OK,
-            Json(SetNetworkActiveResponse {
-                success: true,
-                error: None,
-            }),
-        ),
+        Ok(_) => {
+            let _ = state.peer_changed_tx.send(network_id);
+            (
+                StatusCode::OK,
+                Json(SetNetworkActiveResponse {
+                    success: true,
+                    error: None,
+                }),
+            )
+        }
         Err(e @ FetchError::NotSupported { .. }) | Err(e @ FetchError::DataError(_)) => {
             error!(
                 "set_network_active failed for network={} node={} active={}: {}",
                 network_id, body.node_id, body.active, e
             );
-            let error_code = map_control_error_code(
-                &e,
-                "NETWORK_CONTROL_BACKEND_UNSUPPORTED",
-                "NETWORK_CONTROL_INVALID_REQUEST",
-                "NETWORK_CONTROL_EXECUTION_FAILED",
-            );
+            let error_code = match &e {
+                FetchError::NotSupported { .. } => "NETWORK_CONTROL_BACKEND_UNSUPPORTED",
+                FetchError::DataError(_) => "NETWORK_CONTROL_INVALID_REQUEST",
+                _ => "NETWORK_CONTROL_EXECUTION_FAILED",
+            };
             (
                 StatusCode::BAD_REQUEST,
                 Json(SetNetworkActiveResponse {
                     success: false,
-                    error: Some(error_code),
+                    error: Some(error_code.to_string()),
                 }),
             )
         }
@@ -396,19 +397,6 @@ pub async fn set_network_active(
                 }),
             )
         }
-    }
-}
-
-fn map_control_error_code(
-    err: &FetchError,
-    unsupported_code: &str,
-    invalid_request_code: &str,
-    execution_failed_code: &str,
-) -> String {
-    match err {
-        FetchError::NotSupported { .. } => unsupported_code.to_string(),
-        FetchError::DataError(_) => invalid_request_code.to_string(),
-        _ => execution_failed_code.to_string(),
     }
 }
 
@@ -474,6 +462,7 @@ mod tests {
                     supports_mining: true,
                     signet_challenge: None,
                     signet_nbits: None,
+                    p2p_address: None,
                 },
                 mine_behavior,
                 network_behavior,
@@ -590,6 +579,7 @@ mod tests {
 
     fn test_state(networks: Vec<Network>) -> AppState {
         let (cache_changed_tx, _) = tokio::sync::broadcast::channel(4);
+        let (peer_changed_tx, _) = tokio::sync::broadcast::channel(4);
         let caches: Caches = Arc::new(Mutex::new(BTreeMap::new()));
         AppState {
             caches,
@@ -597,6 +587,7 @@ mod tests {
             network_infos: vec![],
             rss_base_url: String::new(),
             cache_changed_tx,
+            peer_changed_tx,
         }
     }
 

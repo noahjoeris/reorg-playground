@@ -244,6 +244,7 @@ mod tests {
                 supports_mining: true,
                 signet_challenge: None,
                 signet_nbits: None,
+                p2p_address: None,
             },
             "127.0.0.1:18334".to_string(),
             "user".to_string(),

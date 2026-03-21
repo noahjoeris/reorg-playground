@@ -393,4 +393,5 @@ pub struct AppState {
     pub network_infos: Vec<NetworkJson>,
     pub rss_base_url: String,
     pub cache_changed_tx: tokio::sync::broadcast::Sender<u32>,
+    pub peer_changed_tx: tokio::sync::broadcast::Sender<u32>,
 }

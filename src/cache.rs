@@ -321,6 +321,7 @@ mod tests {
             supports_mining: true,
             signet_challenge: None,
             signet_nbits: None,
+            p2p_address: None,
         };
         {
             let mut locked_caches = caches.lock().await;
@@ -398,6 +399,7 @@ mod tests {
             supports_mining: true,
             signet_challenge: None,
             signet_nbits: None,
+            p2p_address: None,
         };
 
         {

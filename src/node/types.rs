@@ -1,4 +1,5 @@
 use bitcoincore_rpc::bitcoin::{BlockHash, Network as BitcoinNetwork};
+use serde::Serialize;
 use std::fmt;
 
 /// Selects whether a header should be fetched by height or by hash.
@@ -23,6 +24,9 @@ pub struct NodeInfo {
     pub signet_challenge: Option<String>,
     /// Custom signet mining difficulty target (hex). Set from the network config.
     pub signet_nbits: Option<String>,
+    /// P2P listening address (`host:port`) used for peer connections between nodes.
+    /// Computed from `rpc_host` + `p2p_port` in the config; `None` when `p2p_port` is unset.
+    pub p2p_address: Option<String>,
 }
 
 impl fmt::Display for NodeInfo {
@@ -33,4 +37,19 @@ impl fmt::Display for NodeInfo {
             self.id, self.name, self.implementation, self.network_type, self.supports_mining
         )
     }
+}
+
+/// Peer connection information returned by `getpeerinfo`.
+#[derive(Debug, Clone, Serialize)]
+pub struct PeerInfo {
+    pub id: u64,
+    pub addr: String,
+    /// Local bind address for this connection. For inbound peers this is the
+    /// node's own listening address, which lets us discover the P2P port.
+    #[serde(skip_serializing)]
+    pub addrbind: String,
+    pub subver: String,
+    pub inbound: bool,
+    pub connection_type: String,
+    pub network: String,
 }

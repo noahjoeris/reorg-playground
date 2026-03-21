@@ -137,6 +137,8 @@ struct TomlNode {
     use_rest: Option<bool>,
     client_implementation: String,
     supports_mining: Option<bool>,
+    /// P2P listening port. When set, the node's P2P address is `{rpc_host}:{p2p_port}`.
+    p2p_port: Option<u16>,
 }
 
 impl fmt::Display for TomlNode {
@@ -341,6 +343,18 @@ fn normalize_stale_rate_ranges(
     Ok(ranges)
 }
 
+/// Derives the host portion used for P2P connections from a configured RPC host.
+///
+/// The config accepts backend-specific RPC transport schemes such as `http://`, `https://`, and
+/// `ssl://`, but the derived P2P address must remain a plain `host:port`.
+fn p2p_host_from_rpc_host(rpc_host: &str) -> &str {
+    rpc_host
+        .strip_prefix("http://")
+        .or_else(|| rpc_host.strip_prefix("https://"))
+        .or_else(|| rpc_host.strip_prefix("ssl://"))
+        .unwrap_or(rpc_host)
+}
+
 fn parse_toml_node(
     toml_node: &TomlNode,
     network_type: BitcoinNetwork,
@@ -348,6 +362,10 @@ fn parse_toml_node(
     signet_nbits: &Option<String>,
 ) -> Result<Arc<dyn Node>, ConfigError> {
     let client_implementation = toml_node.client_implementation.parse::<Backend>()?;
+
+    let p2p_address = toml_node
+        .p2p_port
+        .map(|port| format!("{}:{}", p2p_host_from_rpc_host(&toml_node.rpc_host), port));
 
     let node_info = NodeInfo {
         id: toml_node.id,
@@ -358,6 +376,7 @@ fn parse_toml_node(
         supports_mining: toml_node.supports_mining.unwrap_or(true),
         signet_challenge: signet_challenge.clone(),
         signet_nbits: signet_nbits.clone(),
+        p2p_address,
     };
 
     match client_implementation {
@@ -673,5 +692,18 @@ mod tests {
         assert_eq!(mainnet.nodes[1].info().implementation, "esplora");
         assert_eq!(testnet.nodes[0].info().implementation, "electrum");
         assert_eq!(regtest.nodes[0].info().implementation, "btcd");
+    }
+
+    #[test]
+    fn node_p2p_address_is_absent_without_explicit_p2p_port() {
+        let config = parse_example_with(|config| {
+            node_mut(config, 3, 0)
+                .as_table_mut()
+                .expect("node should be a table")
+                .remove("p2p_port");
+        })
+        .expect("config should parse");
+
+        assert_eq!(config.networks[3].nodes[0].info().p2p_address, None);
     }
 }

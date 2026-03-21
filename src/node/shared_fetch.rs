@@ -618,6 +618,7 @@ mod tests {
                     supports_mining: true,
                     signet_challenge: None,
                     signet_nbits: None,
+                    p2p_address: None,
                 },
                 endpoint: "mock://node".to_string(),
                 active_fetch_mode,

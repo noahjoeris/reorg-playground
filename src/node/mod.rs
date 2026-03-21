@@ -20,7 +20,7 @@ pub use btcd::BtcdNode;
 pub use electrum::Electrum;
 pub use esplora::Esplora;
 pub(crate) use shared_fetch::fetch_missing_headers_for_unexpected_roots;
-pub use types::{HeaderLocator, NodeInfo};
+pub use types::{HeaderLocator, NodeInfo, PeerInfo};
 
 fn is_regtest_or_signet(network: BitcoinNetwork) -> bool {
     matches!(network, BitcoinNetwork::Regtest | BitcoinNetwork::Signet)
@@ -101,5 +101,49 @@ pub trait Node: Send + Sync {
             node: self.info().implementation.clone(),
             operation: "set_p2p_network_active",
         })
+    }
+
+    /// Returns peer connection information when supported by the backend.
+    async fn get_peer_info(&self) -> Result<Vec<PeerInfo>, FetchError> {
+        Err(FetchError::NotSupported {
+            node: self.info().implementation.clone(),
+            operation: "get_peer_info",
+        })
+    }
+
+    /// Connects to a peer at the given address when supported by the backend.
+    async fn add_peer(&self, _addr: &str) -> Result<(), FetchError> {
+        Err(FetchError::NotSupported {
+            node: self.info().implementation.clone(),
+            operation: "add_peer",
+        })
+    }
+
+    /// Removes a peer connection and clears any backend reconnect state when supported.
+    ///
+    /// `peer_id` is Bitcoin Core's internal `id` from `getpeerinfo` (preferred); `addr` is used
+    /// for `disconnectnode` fallback. `addnode_remove_candidates` must include the exact string(s)
+    /// passed to `addnode add`, or the persistent entry will survive and Core will reconnect.
+    async fn remove_peer_connection(
+        &self,
+        _addr: &str,
+        _peer_id: Option<u64>,
+        _addnode_remove_candidates: &[String],
+    ) -> Result<(), FetchError> {
+        Err(FetchError::NotSupported {
+            node: self.info().implementation.clone(),
+            operation: "remove_peer_connection",
+        })
+    }
+
+    /// Removes this node's side of a symmetric peer link after the other side was already removed.
+    ///
+    /// Implementations should clear any matching `addnode` state and best-effort disconnect live
+    /// sockets that target the counterparty's listen addresses so the peer does not reconnect.
+    async fn remove_counterparty_peer_connection(
+        &self,
+        _counterparty_listen_address_candidates: &[String],
+    ) -> Result<(), FetchError> {
+        Ok(())
     }
 }

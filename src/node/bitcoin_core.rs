@@ -1,7 +1,7 @@
 use crate::error::FetchError;
 use crate::node::shared_fetch;
 use crate::node::signet_mining;
-use crate::node::{ActiveHeadersBatchProvider, HeaderLocator, Node, NodeInfo};
+use crate::node::{ActiveHeadersBatchProvider, HeaderLocator, Node, NodeInfo, PeerInfo};
 use crate::types::{ChainTip, HeaderInfo, Tree};
 use async_trait::async_trait;
 use bitcoin_pool_identification::{PoolIdentification, default_data};
@@ -11,7 +11,77 @@ use bitcoincore_rpc::bitcoin::blockdata::block::Header;
 use bitcoincore_rpc::jsonrpc;
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use log::debug;
+use std::collections::HashSet;
+use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use tokio::task;
+
+/// Collects every `host:port` representation that may identify the same remote peer.
+///
+/// Bitcoin Core can report peers by the original hostname or by a resolved `ip:port`. We keep
+/// both forms so peer cleanup can match whichever representation Core returns.
+fn collect_peer_address_variants(addresses: &[String]) -> HashSet<String> {
+    let mut variants = HashSet::new();
+    for address in addresses {
+        let trimmed_address = address.trim();
+        if trimmed_address.is_empty() {
+            continue;
+        }
+        variants.insert(trimmed_address.to_string());
+        if let Ok(resolved_addresses) = trimmed_address.to_socket_addrs() {
+            for resolved_address in resolved_addresses {
+                variants.insert(resolved_address.to_string());
+            }
+        }
+    }
+    variants
+}
+
+/// Resolves the IPs behind candidate peer addresses for hostname-to-IP fallback matching.
+///
+/// This is used only when an exact `host:port` match fails and the target is not loopback, since
+/// loopback peers often share the same IP and would otherwise be easy to disconnect incorrectly.
+fn collect_peer_address_ips(addresses: &[String]) -> HashSet<IpAddr> {
+    let mut ips = HashSet::new();
+    for address in addresses {
+        let trimmed_address = address.trim();
+        if trimmed_address.is_empty() {
+            continue;
+        }
+        if let Ok(socket_address) = trimmed_address.parse::<SocketAddr>() {
+            ips.insert(socket_address.ip());
+        }
+        if let Ok(resolved_addresses) = trimmed_address.to_socket_addrs() {
+            for resolved_address in resolved_addresses {
+                ips.insert(resolved_address.ip());
+            }
+        }
+    }
+    ips
+}
+
+/// Attempts to disconnect a Bitcoin Core peer if it is still connected.
+///
+/// Core prefers `disconnectnode` by peer id, but older call sites may only know the address. RPC
+/// error `-29` means "not connected", which we treat as an already-satisfied disconnect.
+fn try_disconnect_peer(
+    rpc: &Client,
+    peer_id: u64,
+    addr: &str,
+) -> Result<(), bitcoincore_rpc::Error> {
+    let disconnect_result = match u32::try_from(peer_id) {
+        Ok(nid) => rpc.disconnect_node_by_id(nid),
+        Err(_) => rpc.disconnect_node(addr),
+    };
+    match disconnect_result {
+        Ok(()) => Ok(()),
+        Err(bitcoincore_rpc::Error::JsonRpc(bitcoincore_rpc::jsonrpc::Error::Rpc(ref e)))
+            if e.code == -29 =>
+        {
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
 
 pub(super) const MINER_WALLET: &str = "miner";
 
@@ -342,6 +412,175 @@ impl Node for BitcoinCoreNode {
             .await?;
         Ok(())
     }
+
+    async fn get_peer_info(&self) -> Result<Vec<PeerInfo>, FetchError> {
+        self.with_rpc(|rpc| {
+            rpc.get_peer_info().map(|peers| {
+                peers
+                    .into_iter()
+                    .map(|p| PeerInfo {
+                        id: p.id,
+                        addr: p.addr,
+                        addrbind: p.addrbind,
+                        subver: p.subver,
+                        inbound: p.inbound,
+                        connection_type: p
+                            .connection_type
+                            .map(|ct| format!("{:?}", ct).to_lowercase())
+                            .unwrap_or_default(),
+                        network: p
+                            .network
+                            .map(|n| format!("{:?}", n).to_lowercase())
+                            .unwrap_or_default(),
+                    })
+                    .collect()
+            })
+        })
+        .await
+    }
+
+    async fn add_peer(&self, addr: &str) -> Result<(), FetchError> {
+        let addr = addr.to_string();
+        self.with_rpc(move |rpc| {
+            match rpc.add_node(&addr) {
+                Ok(()) => Ok(()),
+                // "Node already added" (-23): treat as success.
+                Err(bitcoincore_rpc::Error::JsonRpc(bitcoincore_rpc::jsonrpc::Error::Rpc(
+                    ref e,
+                ))) if e.code == -23 => Ok(()),
+                Err(e) => Err(e),
+            }
+        })
+        .await
+    }
+
+    /// Removes a peer connection by clearing matching `addnode` entries and dropping the live socket.
+    ///
+    /// Persistent `addnode "add"` peers reconnect after `disconnectnode` unless `addnode … remove`
+    /// is called with the **same string** used when adding. `getpeerinfo`'s `addr` often differs
+    /// (e.g. hostname vs IP), so callers pass catalog / connect strings via `addnode_remove_candidates`.
+    ///
+    /// Uses `disconnectnode` by internal peer id when provided. Treats RPC -29 as success.
+    async fn remove_peer_connection(
+        &self,
+        addr: &str,
+        peer_id: Option<u64>,
+        addnode_remove_candidates: &[String],
+    ) -> Result<(), FetchError> {
+        let addr = addr.to_string();
+        let mut remove_strings: Vec<String> = addnode_remove_candidates
+            .iter()
+            .filter(|s| !s.is_empty())
+            .cloned()
+            .collect();
+        if !addr.is_empty() && !remove_strings.iter().any(|s| s == &addr) {
+            remove_strings.push(addr.clone());
+        }
+        if remove_strings.is_empty() {
+            remove_strings.push(addr.clone());
+        }
+
+        self.with_rpc(move |rpc| {
+            // Discover the exact `addnode` string Core stored (often differs from `getpeerinfo.addr`).
+            if let Ok(added) = rpc.get_added_node_info(None) {
+                for entry in added {
+                    for a in &entry.addresses {
+                        if a.address == addr {
+                            let s = entry.added_node.clone();
+                            if !remove_strings.contains(&s) {
+                                remove_strings.push(s);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            for s in &remove_strings {
+                let _ = rpc.remove_node(s);
+            }
+
+            let try_by_addr = || rpc.disconnect_node(&addr);
+
+            let disconnect_result = match peer_id.and_then(|id| u32::try_from(id).ok()) {
+                Some(nid) => match rpc.disconnect_node_by_id(nid) {
+                    Ok(()) => Ok(()),
+                    Err(bitcoincore_rpc::Error::JsonRpc(bitcoincore_rpc::jsonrpc::Error::Rpc(
+                        ref e,
+                    ))) if e.code == -29 => Ok(()),
+                    Err(_) => try_by_addr(),
+                },
+                None => try_by_addr(),
+            };
+
+            match disconnect_result {
+                Ok(()) => Ok(()),
+                Err(bitcoincore_rpc::Error::JsonRpc(bitcoincore_rpc::jsonrpc::Error::Rpc(
+                    ref e,
+                ))) if e.code == -29 => Ok(()),
+                Err(e) => Err(e),
+            }
+        })
+        .await
+    }
+
+    /// Removes this node's side of a symmetric peer relationship after the other node disconnects.
+    ///
+    /// The caller passes the counterparty's listen addresses. We remove matching `addnode` entries
+    /// first, then best-effort disconnect any live sockets that still target those addresses. When
+    /// the counterparty resolves to loopback we skip IP-only matching, because multiple local peers
+    /// may legitimately share the same loopback address.
+    async fn remove_counterparty_peer_connection(
+        &self,
+        counterparty_listen_address_candidates: &[String],
+    ) -> Result<(), FetchError> {
+        let counterparty_listen_addresses: Vec<String> = counterparty_listen_address_candidates
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if counterparty_listen_addresses.is_empty() {
+            return Ok(());
+        }
+
+        let counterparty_address_variants =
+            collect_peer_address_variants(&counterparty_listen_addresses);
+        let counterparty_ips = collect_peer_address_ips(&counterparty_listen_addresses);
+        let any_loopback = counterparty_ips.iter().any(|ip| ip.is_loopback());
+
+        self.with_rpc(move |rpc| {
+            for s in &counterparty_listen_addresses {
+                let _ = rpc.remove_node(s);
+            }
+
+            if let Ok(added) = rpc.get_added_node_info(None) {
+                for entry in added {
+                    let matched = entry
+                        .addresses
+                        .iter()
+                        .any(|a| counterparty_address_variants.contains(&a.address));
+                    if matched {
+                        let _ = rpc.remove_node(&entry.added_node);
+                    }
+                }
+            }
+
+            let peers = rpc.get_peer_info()?;
+            for p in peers {
+                let mut disconnect = counterparty_address_variants.contains(&p.addr);
+                if !disconnect && !any_loopback {
+                    if let Ok(sa) = p.addr.parse::<SocketAddr>() {
+                        disconnect = counterparty_ips.contains(&sa.ip());
+                    }
+                }
+                if disconnect {
+                    let _ = try_disconnect_peer(&rpc, p.id, &p.addr);
+                }
+            }
+            Ok(())
+        })
+        .await
+    }
 }
 
 #[cfg(test)]
@@ -359,6 +598,7 @@ mod tests {
                 supports_mining: true,
                 signet_challenge: None,
                 signet_nbits: None,
+                p2p_address: None,
             },
             "127.0.0.1:18443".to_string(),
             Auth::UserPass("user".to_string(), "pass".to_string()),

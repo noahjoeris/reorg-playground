@@ -25,6 +25,7 @@ mod error;
 mod headertree;
 mod metrics;
 mod node;
+mod peer_api;
 mod rss;
 mod types;
 
@@ -73,6 +74,8 @@ async fn main() -> Result<(), MainError> {
     let (config, db, caches) = startup().await?;
 
     let (cache_changed_tx, _) = broadcast::channel(16);
+    // Peer-control actions publish network ids here so `/api/peer-changes` subscribers can refetch.
+    let (peer_changed_tx, _) = broadcast::channel(16);
     let network_infos: Vec<NetworkJson> = config.networks.iter().map(NetworkJson::new).collect();
 
     for network in config.networks.iter().cloned() {
@@ -110,6 +113,7 @@ async fn main() -> Result<(), MainError> {
         network_infos,
         rss_base_url: config.rss_base_url.clone(),
         cache_changed_tx: cache_changed_tx.clone(),
+        peer_changed_tx: peer_changed_tx.clone(),
     };
 
     let app = Router::new()
@@ -124,6 +128,16 @@ async fn main() -> Result<(), MainError> {
         .route(
             "/api/{network_id}/network-active",
             post(api::set_network_active),
+        )
+        .route(
+            "/api/{network_id}/peer-info.json",
+            get(peer_api::peer_info_response),
+        )
+        .route("/api/peer-changes", get(peer_api::peer_changes_sse))
+        .route("/api/{network_id}/add-node", post(peer_api::add_node))
+        .route(
+            "/api/{network_id}/disconnect-node",
+            post(peer_api::disconnect_node),
         )
         .route("/rss/{network_id}/forks.xml", get(rss::forks_response))
         .route(

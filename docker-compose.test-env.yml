@@ -67,6 +67,11 @@ services:
   bitcoind-signet-a:
     image: *bitcoin_image
     restart: unless-stopped
+    depends_on:
+      bitcoind-signet-b:
+        condition: service_healthy
+      bitcoind-signet-c:
+        condition: service_healthy
     command:
       - -signet
       - -signetchallenge=5121031b14827738eaf41b67f50a2ddd9d0b08907236f3d0e79bef7fc9ea7b866a3ca821036739e2fc3681d2ef7f9afc0bb2f8964c4f61b6c30f4642cc0322e57967d31f3652ae
@@ -103,6 +108,9 @@ services:
   bitcoind-signet-b:
     image: *bitcoin_image
     restart: unless-stopped
+    depends_on:
+      bitcoind-signet-c:
+        condition: service_healthy
     command:
       - -signet
       - -signetchallenge=5121031b14827738eaf41b67f50a2ddd9d0b08907236f3d0e79bef7fc9ea7b866a3ca821036739e2fc3681d2ef7f9afc0bb2f8964c4f61b6c30f4642cc0322e57967d31f3652ae
@@ -115,7 +123,6 @@ services:
       - -port=38333
       - -dnsseed=0
       - -fixedseeds=0
-      - -addnode=bitcoind-signet-a:38333
       - -addnode=bitcoind-signet-c:38333
       - -datadir=/home/bitcoin/.bitcoin
     volumes:
@@ -151,8 +158,6 @@ services:
       - -port=38333
       - -dnsseed=0
       - -fixedseeds=0
-      - -addnode=bitcoind-signet-a:38333
-      - -addnode=bitcoind-signet-b:38333
       - -datadir=/home/bitcoin/.bitcoin
     volumes:
       - bitcoind_signet_cluster_c_data:/home/bitcoin/.bitcoin

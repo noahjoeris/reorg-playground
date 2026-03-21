@@ -107,12 +107,14 @@ export type ProcessedBlock = HeaderInfo & {
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'error' | 'closed'
 
-export type MineBlockResponse = {
+export type RpcActionResponse = {
   success: boolean
   error?: string
 }
 
-export type SetNodeP2PConnectionResponse = {
-  success: boolean
-  error?: string
-}
+/** @deprecated Use RpcActionResponse instead. */
+export type MineBlockResponse = RpcActionResponse
+/** @deprecated Use RpcActionResponse instead. */
+export type SetNodeP2PConnectionResponse = RpcActionResponse
+/** @deprecated Use RpcActionResponse instead. */
+export type PeerActionResponse = RpcActionResponse
