@@ -97,10 +97,18 @@ Host-managed Signet mining defaults to `./bitcoin-core/contrib/signet/miner`. Ov
 - Multi-backend node observation (Bitcoin Core, Electrum, Esplora, btcd) via RPC/REST.
 - Observed stale-rate metric with configurable rolling windows and all-time view.
 - `Trigger Reorg` button for Bitcoin Core on Regtest and custom Signet: pick the node and depth, then create a reorg in two clicks.
-- Bitcoin Core node controls for Regtest and custom Signet: mine blocks and enable/disable P2P connectivity. Set `view_only_mode` per network to disable these controls.
+- `Node Connection Manager` for Bitcoin Core on Regtest and custom Signet: inspect inbound and outbound peer links, adapt node connectivity to create reorg scenarios, and disable/enable P2P networking. Set `view_only_mode` per network to disable these controls.
 - Config-driven networks and nodes via `config.toml`.
 - Header history persisted in SQLite.
 - Responsive UI for forks, node health, and network state.
+
+### Node Connection Manager
+
+The `Node Connection Manager` lets you adapt inbound and outbound connections between your Bitcoin Core nodes while you experiment with reorg behavior. You can use it to isolate parts of the network, shape custom peer topologies, or simply disable and re-enable P2P networking without leaving the app.
+
+<p align="center">
+  <img src="./screenshot.webp" alt="Node Connection Manager screenshot" width="500" />
+</p>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
