@@ -197,8 +197,14 @@ function hasPendingPeerMutations(
 	return pendingConnects.length > 0 || pendingDisconnects.length > 0;
 }
 
-export function usePeerConnectionManager(network: Network | null) {
-	const networkId = network?.id ?? null;
+export function usePeerConnectionManager(
+	network: Network | null,
+	enabled = true,
+) {
+	const featureEnabled = network != null && !network.view_only_mode;
+	const managedNetwork = featureEnabled ? network : null;
+	const activeNetwork = enabled ? managedNetwork : null;
+	const networkId = activeNetwork?.id ?? null;
 	const { notifyError, notifySuccess } = useNotification();
 	const [pendingConnects, setPendingConnects] = useState<PendingConnect[]>([]);
 	const [pendingDisconnects, setPendingDisconnects] = useState<
@@ -395,7 +401,7 @@ export function usePeerConnectionManager(network: Network | null) {
 			targetLabel: string,
 			address: string,
 		) => {
-			if (!network) {
+			if (!managedNetwork) {
 				return false;
 			}
 
@@ -418,7 +424,7 @@ export function usePeerConnectionManager(network: Network | null) {
 			setPendingConnects((current) => [...current, pendingConnect]);
 
 			try {
-				const result = await addNode(network.id, nodeId, address);
+				const result = await addNode(managedNetwork.id, nodeId, address);
 				if (!result.success) {
 					throw new Error(result.error ?? "Unknown error");
 				}
@@ -439,7 +445,7 @@ export function usePeerConnectionManager(network: Network | null) {
 		[
 			createPendingId,
 			disconnectingConnectionPairKeys,
-			network,
+			managedNetwork,
 			notifyError,
 			pendingConnectionPairKeys,
 			refreshPeerInfo,
@@ -458,7 +464,7 @@ export function usePeerConnectionManager(network: Network | null) {
 			localListenAddressCandidates: string[],
 			matchedNodeId: number | null,
 		) => {
-			if (!network) {
+			if (!managedNetwork) {
 				return false;
 			}
 
@@ -487,7 +493,7 @@ export function usePeerConnectionManager(network: Network | null) {
 
 			try {
 				const result = await disconnectNode(
-					network.id,
+					managedNetwork.id,
 					nodeId,
 					address,
 					peerId,
@@ -516,7 +522,7 @@ export function usePeerConnectionManager(network: Network | null) {
 			createPendingId,
 			disconnectingConnectionPairKeys,
 			disconnectingPeerKeys,
-			network,
+			managedNetwork,
 			notifyError,
 			refreshPeerInfo,
 		],
@@ -531,6 +537,7 @@ export function usePeerConnectionManager(network: Network | null) {
 		pendingConnects,
 		disconnectingPeers: disconnectingPeerKeys,
 		disconnectingConnectionPairs: disconnectingConnectionPairKeys,
+		isFeatureEnabled: featureEnabled,
 		addNode: connectNodePair,
 		disconnectNode: disconnectPeer,
 	};

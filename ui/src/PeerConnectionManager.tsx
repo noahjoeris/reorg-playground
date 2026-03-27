@@ -487,11 +487,12 @@ export function PeerConnectionManager({
 		pendingConnects,
 		disconnectingPeers,
 		disconnectingConnectionPairs,
+		isFeatureEnabled: featureEnabled,
 		addNode: handleAddNode,
 		disconnectNode: handleDisconnect,
-	} = usePeerConnectionManager(dialogOpen ? network : null);
+	} = usePeerConnectionManager(network, dialogOpen);
 
-	if (nodes.length < 2) return null;
+	if (nodes.length < 2 || !featureEnabled) return null;
 
 	const peersByNodeId = new Map(
 		peerData?.nodes.map((n) => [n.node_id, n.peers]) ?? [],
