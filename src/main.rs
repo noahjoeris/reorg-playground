@@ -125,6 +125,7 @@ async fn main() -> Result<(), MainError> {
         .route("/api/networks.json", get(api::networks_response))
         .route("/api/cache-changes", get(api::cache_changes_sse))
         .route("/api/{network_id}/mine-block", post(api::mine_block))
+        .route("/api/{network_id}/faucet", post(api::faucet))
         .route(
             "/api/{network_id}/network-active",
             post(api::set_network_active),

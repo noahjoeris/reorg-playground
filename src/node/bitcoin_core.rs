@@ -1,7 +1,9 @@
 use crate::error::FetchError;
 use crate::node::shared_fetch;
 use crate::node::signet_mining;
-use crate::node::{ActiveHeadersBatchProvider, HeaderLocator, Node, NodeInfo, PeerInfo};
+use crate::node::{
+    ActiveHeadersBatchProvider, FaucetSendResult, HeaderLocator, Node, NodeInfo, PeerInfo,
+};
 use crate::types::{ChainTip, HeaderInfo, Tree};
 use async_trait::async_trait;
 use bitcoin_pool_identification::{PoolIdentification, default_data};
@@ -11,6 +13,9 @@ use bitcoincore_rpc::bitcoin::blockdata::block::Header;
 use bitcoincore_rpc::jsonrpc;
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use log::debug;
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use tokio::task;
@@ -84,6 +89,19 @@ fn try_disconnect_peer(
 }
 
 pub(super) const MINER_WALLET: &str = "miner";
+const FAUCET_WALLET: &str = "faucet";
+const REGTEST_FAUCET_FEE_RATE_SAT_PER_VB: f64 = 1.0;
+const MAX_FAUCET_REFILL_BLOCKS: u64 = 200;
+
+#[derive(Debug, Deserialize)]
+struct FaucetWalletBalances {
+    mine: FaucetWalletMineBalances,
+}
+
+#[derive(Debug, Deserialize)]
+struct FaucetWalletMineBalances {
+    immature: f64,
+}
 
 #[derive(Hash, Clone)]
 pub struct BitcoinCoreNode {
@@ -146,6 +164,23 @@ impl BitcoinCoreNode {
         }
     }
 
+    fn jsonrpc_auth_for_url(&self, url: String) -> Result<shared_fetch::RpcAuth, FetchError> {
+        let (user, password) = self.rpc_auth.clone().get_user_pass()?;
+        Ok(shared_fetch::RpcAuth {
+            url,
+            user: user.unwrap_or_default(),
+            password: password.unwrap_or_default(),
+        })
+    }
+
+    fn rpc_jsonrpc_auth(&self) -> Result<shared_fetch::RpcAuth, FetchError> {
+        self.jsonrpc_auth_for_url(self.normalized_rpc_url())
+    }
+
+    fn wallet_jsonrpc_auth(&self, wallet: &str) -> Result<shared_fetch::RpcAuth, FetchError> {
+        self.jsonrpc_auth_for_url(self.wallet_rpc_url(wallet))
+    }
+
     pub(super) async fn with_rpc<T, F>(&self, op: F) -> Result<T, FetchError>
     where
         T: Send + 'static,
@@ -198,6 +233,129 @@ impl BitcoinCoreNode {
         Ok(())
     }
 
+    async fn rpc_jsonrpc_call<T>(
+        &self,
+        method: &'static str,
+        params: Vec<Value>,
+    ) -> Result<Option<T>, FetchError>
+    where
+        T: DeserializeOwned + Send + 'static,
+    {
+        let auth = self.rpc_jsonrpc_auth()?;
+        let result = task::spawn_blocking(move || shared_fetch::jsonrpc_call(method, params, &auth))
+            .await?;
+        result.map_err(|e| {
+            FetchError::BitcoinCoreREST(format!(
+                "Bitcoin Core RPC '{}' failed for {}: {}",
+                method,
+                self.info(),
+                e
+            ))
+        })
+    }
+
+    async fn wallet_jsonrpc_call<T>(
+        &self,
+        wallet: &str,
+        method: &'static str,
+        params: Vec<Value>,
+    ) -> Result<Option<T>, FetchError>
+    where
+        T: DeserializeOwned + Send + 'static,
+    {
+        let auth = self.wallet_jsonrpc_auth(wallet)?;
+        let wallet_name = wallet.to_string();
+        let result = task::spawn_blocking(move || shared_fetch::jsonrpc_call(method, params, &auth))
+            .await?;
+        result.map_err(|e| {
+            FetchError::BitcoinCoreREST(format!(
+                "Bitcoin Core wallet RPC '{}' failed for {} wallet '{}': {}",
+                method,
+                self.info(),
+                wallet_name,
+                e
+            ))
+        })
+    }
+
+    async fn rpc_jsonrpc_required<T>(
+        &self,
+        method: &'static str,
+        params: Vec<Value>,
+    ) -> Result<T, FetchError>
+    where
+        T: DeserializeOwned + Send + 'static,
+    {
+        self.rpc_jsonrpc_call(method, params).await?.ok_or_else(|| {
+            FetchError::DataError(format!(
+                "Bitcoin Core RPC '{}' returned no result for {}",
+                method,
+                self.info()
+            ))
+        })
+    }
+
+    async fn wallet_jsonrpc_required<T>(
+        &self,
+        wallet: &str,
+        method: &'static str,
+        params: Vec<Value>,
+    ) -> Result<T, FetchError>
+    where
+        T: DeserializeOwned + Send + 'static,
+    {
+        self.wallet_jsonrpc_call(wallet, method, params)
+            .await?
+            .ok_or_else(|| {
+                FetchError::DataError(format!(
+                    "Bitcoin Core wallet RPC '{}' returned no result for {} wallet '{}'",
+                    method,
+                    self.info(),
+                    wallet
+                ))
+            })
+    }
+
+    async fn faucet_wallet_balances(&self) -> Result<FaucetWalletBalances, FetchError> {
+        self.wallet_jsonrpc_required(FAUCET_WALLET, "getbalances", vec![])
+            .await
+    }
+
+    async fn mine_faucet_refill_blocks(&self, count: u64) -> Result<(), FetchError> {
+        let reward_address: String = self
+            .wallet_jsonrpc_required(FAUCET_WALLET, "getnewaddress", vec![])
+            .await?;
+        let _: Vec<String> = self
+            .rpc_jsonrpc_required("generatetoaddress", vec![json!(count), json!(reward_address)])
+            .await?;
+        Ok(())
+    }
+
+    async fn try_send_faucet_transaction(
+        &self,
+        address: &str,
+        amount: bitcoin::Amount,
+    ) -> Result<String, FetchError> {
+        self.ensure_wallet_loaded(FAUCET_WALLET).await?;
+        self.wallet_jsonrpc_required(
+            FAUCET_WALLET,
+            "sendtoaddress",
+            vec![
+                json!(address),
+                json!(amount.to_sat() as f64 / 100_000_000.0),
+                json!(""),
+                json!(""),
+                json!(false),
+                json!(false),
+                Value::Null,
+                json!("unset"),
+                Value::Null,
+                json!(REGTEST_FAUCET_FEE_RATE_SAT_PER_VB),
+            ],
+        )
+        .await
+    }
+
     pub(super) fn node_name(&self) -> &str {
         &self.info.name
     }
@@ -212,6 +370,31 @@ impl BitcoinCoreNode {
 
     pub(super) fn node_info(&self) -> &NodeInfo {
         &self.info
+    }
+}
+
+fn faucet_error_is_insufficient_funds(error: &FetchError) -> bool {
+    match error {
+        FetchError::BitcoinCoreREST(message) | FetchError::DataError(message) => {
+            let lowered = message.to_lowercase();
+            lowered.contains("insufficient funds") || lowered.contains("insufficient fee")
+        }
+        FetchError::BitcoinCoreRPC(bitcoincore_rpc::Error::JsonRpc(
+            bitcoincore_rpc::jsonrpc::Error::Rpc(rpc_error),
+        )) => {
+            let lowered = format!("{:?}", rpc_error).to_lowercase();
+            rpc_error.code == -6 || lowered.contains("insufficient funds")
+        }
+        _ => false,
+    }
+}
+
+fn next_faucet_refill_block_count(immature_balance: f64, mined_blocks: u64) -> Option<u64> {
+    let blocks_to_mine = if immature_balance > 0.0 { 1 } else { 101 };
+    if mined_blocks.saturating_add(blocks_to_mine) > MAX_FAUCET_REFILL_BLOCKS {
+        None
+    } else {
+        Some(blocks_to_mine)
     }
 }
 
@@ -400,6 +583,43 @@ impl Node for BitcoinCoreNode {
             .assume_checked();
         self.with_rpc(move |rpc| rpc.generate_to_address(count, &mining_address))
             .await
+    }
+
+    async fn send_faucet_transaction(
+        &self,
+        address: &str,
+        amount: bitcoin::Amount,
+    ) -> Result<FaucetSendResult, FetchError> {
+        if self.info.network_type != bitcoin::Network::Regtest {
+            return Err(self.not_supported("send_faucet_transaction"));
+        }
+
+        let mut mined_blocks = 0;
+        loop {
+            match self.try_send_faucet_transaction(address, amount).await {
+                Ok(txid) => {
+                    return Ok(FaucetSendResult {
+                        txid,
+                        mined_blocks,
+                    });
+                }
+                Err(error) if faucet_error_is_insufficient_funds(&error) => {
+                    let balances = self.faucet_wallet_balances().await?;
+                    let Some(blocks_to_mine) =
+                        next_faucet_refill_block_count(balances.mine.immature, mined_blocks)
+                    else {
+                        return Err(FetchError::DataError(format!(
+                            "insufficient funds in faucet wallet on {} after {} refill blocks",
+                            self.info(),
+                            MAX_FAUCET_REFILL_BLOCKS
+                        )));
+                    };
+                    self.mine_faucet_refill_blocks(blocks_to_mine).await?;
+                    mined_blocks += blocks_to_mine;
+                }
+                Err(error) => return Err(error),
+            }
+        }
     }
 
     async fn p2p_network_active(&self) -> Result<bool, FetchError> {
@@ -611,5 +831,27 @@ mod tests {
         let node = test_node(1, bitcoin::Network::Regtest);
         let result = node.mine_new_blocks(0).await;
         assert!(matches!(result, Err(FetchError::DataError(_))));
+    }
+
+    #[test]
+    fn faucet_refill_bootstraps_when_no_immature_balance_exists() {
+        assert_eq!(next_faucet_refill_block_count(0.0, 0), Some(101));
+    }
+
+    #[test]
+    fn faucet_refill_uses_single_block_once_coinbase_is_immature() {
+        assert_eq!(next_faucet_refill_block_count(12.5, 101), Some(1));
+    }
+
+    #[test]
+    fn faucet_refill_stops_at_hard_cap() {
+        assert_eq!(next_faucet_refill_block_count(12.5, MAX_FAUCET_REFILL_BLOCKS), None);
+    }
+
+    #[test]
+    fn faucet_detects_insufficient_funds_errors() {
+        assert!(faucet_error_is_insufficient_funds(&FetchError::DataError(
+            "insufficient funds in faucet wallet".to_string(),
+        )));
     }
 }

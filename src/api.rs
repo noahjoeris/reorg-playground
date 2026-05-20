@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,12 +12,13 @@ use axum::{
 use futures_util::StreamExt;
 use futures_util::future::{join_all, ready};
 use futures_util::stream::Stream;
+use bitcoincore_rpc::bitcoin::{Address, Amount, Denomination, Network as BitcoinNetwork};
 use log::error;
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 
-use crate::config::Network;
+use crate::config::{Network, NetworkType};
 use crate::error::FetchError;
 use crate::node::Node;
 use crate::types::{
@@ -210,6 +212,24 @@ pub struct MineBlockResponse {
     pub error: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct FaucetRequest {
+    pub node_id: u32,
+    pub address: String,
+    pub amount_btc: String,
+}
+
+#[derive(Serialize)]
+pub struct FaucetResponse {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub txid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mined_blocks: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 pub async fn mine_block(
     Path(network_id): Path<u32>,
     State(state): State<AppState>,
@@ -296,6 +316,162 @@ pub async fn mine_block(
                 Json(MineBlockResponse {
                     success: false,
                     error: Some("MINE_EXECUTION_FAILED".to_string()),
+                }),
+            )
+        }
+    }
+}
+
+pub async fn faucet(
+    Path(network_id): Path<u32>,
+    State(state): State<AppState>,
+    Json(body): Json<FaucetRequest>,
+) -> (StatusCode, Json<FaucetResponse>) {
+    let network = match get_network(&state, network_id) {
+        Some(network) => network,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(FaucetResponse {
+                    success: false,
+                    txid: None,
+                    mined_blocks: None,
+                    error: Some("FAUCET_BACKEND_UNSUPPORTED".to_string()),
+                }),
+            );
+        }
+    };
+
+    if network.view_only_mode || network.network_type != NetworkType::Regtest {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(FaucetResponse {
+                success: false,
+                txid: None,
+                mined_blocks: None,
+                error: Some("FAUCET_FEATURE_DISABLED".to_string()),
+            }),
+        );
+    }
+
+    let node = match get_node(network, body.node_id) {
+        Some(node) => node,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(FaucetResponse {
+                    success: false,
+                    txid: None,
+                    mined_blocks: None,
+                    error: Some("FAUCET_BACKEND_UNSUPPORTED".to_string()),
+                }),
+            );
+        }
+    };
+
+    if !node.supports_controls(network.view_only_mode) || !node.supports_mining(network.view_only_mode) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(FaucetResponse {
+                success: false,
+                txid: None,
+                mined_blocks: None,
+                error: Some("FAUCET_NODE_NOT_ELIGIBLE".to_string()),
+            }),
+        );
+    }
+
+    let address = match Address::from_str(&body.address)
+        .ok()
+        .and_then(|address| address.require_network(BitcoinNetwork::Regtest).ok())
+    {
+        Some(address) => address,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(FaucetResponse {
+                    success: false,
+                    txid: None,
+                    mined_blocks: None,
+                    error: Some("FAUCET_INVALID_ADDRESS".to_string()),
+                }),
+            );
+        }
+    };
+
+    let amount = match Amount::from_str_in(body.amount_btc.trim(), Denomination::Bitcoin) {
+        Ok(amount) if amount > Amount::from_sat(0) => amount,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(FaucetResponse {
+                    success: false,
+                    txid: None,
+                    mined_blocks: None,
+                    error: Some("FAUCET_INVALID_AMOUNT".to_string()),
+                }),
+            );
+        }
+    };
+
+    let address = address.to_string();
+    match node.send_faucet_transaction(&address, amount).await {
+        Ok(result) => (
+            StatusCode::OK,
+            Json(FaucetResponse {
+                success: true,
+                txid: Some(result.txid),
+                mined_blocks: Some(result.mined_blocks),
+                error: None,
+            }),
+        ),
+        Err(e @ FetchError::NotSupported { .. }) => {
+            error!(
+                "Faucet send failed for network={} node={}: {}",
+                network_id, body.node_id, e
+            );
+            (
+                StatusCode::BAD_REQUEST,
+                Json(FaucetResponse {
+                    success: false,
+                    txid: None,
+                    mined_blocks: None,
+                    error: Some("FAUCET_BACKEND_UNSUPPORTED".to_string()),
+                }),
+            )
+        }
+        Err(FetchError::DataError(message)) => {
+            error!(
+                "Faucet send failed for network={} node={}: {}",
+                network_id, body.node_id, message
+            );
+            let error_code = if message.to_lowercase().contains("insufficient funds") {
+                "FAUCET_INSUFFICIENT_FUNDS"
+            } else {
+                "FAUCET_EXECUTION_FAILED"
+            };
+            (
+                StatusCode::BAD_REQUEST,
+                Json(FaucetResponse {
+                    success: false,
+                    txid: None,
+                    mined_blocks: None,
+                    error: Some(error_code.to_string()),
+                }),
+            )
+        }
+        Err(e) => {
+            error!(
+                "Faucet send failed for network={} node={}: {}",
+                network_id, body.node_id, e
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(FaucetResponse {
+                    success: false,
+                    txid: None,
+                    mined_blocks: None,
+                    error: Some("FAUCET_EXECUTION_FAILED".to_string()),
                 }),
             )
         }
@@ -404,13 +580,14 @@ pub async fn set_network_active(
 mod tests {
     use super::*;
     use crate::config::{Network, NetworkType, StaleRateRange};
-    use crate::node::{HeaderLocator, Node, NodeInfo};
+    use crate::node::{FaucetSendResult, HeaderLocator, Node, NodeInfo};
     use crate::types::{
         Cache, Caches, ChainTip, HeaderInfo, MetricUnavailableReason, NetworkMetricsJson,
         StaleBlockRateJson, StaleBlockRateRangeJson, StaleBlockRateWindowJson, Tree,
     };
     use async_trait::async_trait;
     use bitcoincore_rpc::bitcoin;
+    use bitcoincore_rpc::bitcoin::Amount;
     use bitcoincore_rpc::bitcoin::BlockHash;
     use bitcoincore_rpc::bitcoin::blockdata::block::Header;
     use bitcoincore_rpc::bitcoin::hashes::Hash;
@@ -439,10 +616,13 @@ mod tests {
     struct MockNode {
         info: NodeInfo,
         mine_behavior: ControlBehavior,
+        faucet_behavior: ControlBehavior,
         network_behavior: ControlBehavior,
         p2p_read_behavior: P2PReadBehavior,
         p2p_state: Arc<Mutex<bool>>,
         mine_calls: Arc<Mutex<Vec<u64>>>,
+        faucet_calls: Arc<Mutex<Vec<(String, u64)>>>,
+        faucet_result: FaucetSendResult,
         network_calls: Arc<Mutex<Vec<bool>>>,
     }
 
@@ -465,10 +645,16 @@ mod tests {
                     p2p_address: None,
                 },
                 mine_behavior,
+                faucet_behavior: ControlBehavior::Ok,
                 network_behavior,
                 p2p_read_behavior: P2PReadBehavior::Available,
                 p2p_state: Arc::new(Mutex::new(true)),
                 mine_calls: Arc::new(Mutex::new(Vec::new())),
+                faucet_calls: Arc::new(Mutex::new(Vec::new())),
+                faucet_result: FaucetSendResult {
+                    txid: "mock-txid".to_string(),
+                    mined_blocks: 0,
+                },
                 network_calls: Arc::new(Mutex::new(Vec::new())),
             }
         }
@@ -485,6 +671,19 @@ mod tests {
 
         fn with_p2p_read_behavior(mut self, p2p_read_behavior: P2PReadBehavior) -> Self {
             self.p2p_read_behavior = p2p_read_behavior;
+            self
+        }
+
+        fn with_faucet_behavior(mut self, faucet_behavior: ControlBehavior) -> Self {
+            self.faucet_behavior = faucet_behavior;
+            self
+        }
+
+        fn with_faucet_result(mut self, txid: &str, mined_blocks: u64) -> Self {
+            self.faucet_result = FaucetSendResult {
+                txid: txid.to_string(),
+                mined_blocks,
+            };
             self
         }
     }
@@ -554,6 +753,30 @@ mod tests {
                 ControlBehavior::DataError => Err(FetchError::DataError("bad input".to_string())),
                 ControlBehavior::ExecutionError => {
                     Err(FetchError::BitcoinCoreREST("mock failure".to_string()))
+                }
+            }
+        }
+
+        async fn send_faucet_transaction(
+            &self,
+            address: &str,
+            amount: Amount,
+        ) -> Result<crate::node::FaucetSendResult, FetchError> {
+            self.faucet_calls
+                .lock()
+                .await
+                .push((address.to_string(), amount.to_sat()));
+            match self.faucet_behavior {
+                ControlBehavior::Ok => Ok(self.faucet_result.clone()),
+                ControlBehavior::NotSupported => Err(FetchError::NotSupported {
+                    node: "mock".to_string(),
+                    operation: "send_faucet_transaction",
+                }),
+                ControlBehavior::DataError => Err(FetchError::DataError(
+                    "insufficient funds in faucet wallet".to_string(),
+                )),
+                ControlBehavior::ExecutionError => {
+                    Err(FetchError::BitcoinCoreREST("mock faucet failure".to_string()))
                 }
             }
         }
@@ -842,6 +1065,237 @@ mod tests {
         assert!(!body.0.success);
         assert_eq!(body.0.error.as_deref(), Some("MINE_NODE_NOT_A_MINER"));
         assert!(node.mine_calls.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn faucet_succeeds_without_refill_mining() {
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok)
+            .with_faucet_result("txid-123", 0);
+        let state = test_state(single_node_network(1, node.clone()));
+
+        let (status, body) = faucet(
+            Path(1),
+            State(state),
+            Json(FaucetRequest {
+                node_id: 7,
+                address: "bcrt1qs758ursh4q9z627kt3pp5yysm78ddny6txaqgw".to_string(),
+                amount_btc: "1.25".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.0.success);
+        assert_eq!(body.0.txid.as_deref(), Some("txid-123"));
+        assert_eq!(body.0.mined_blocks, Some(0));
+        assert_eq!(
+            node.faucet_calls.lock().await.as_slice(),
+            &[("bcrt1qs758ursh4q9z627kt3pp5yysm78ddny6txaqgw".to_string(), 125_000_000)]
+        );
+    }
+
+    #[tokio::test]
+    async fn faucet_rejected_in_view_only_mode() {
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok);
+        let state = test_state(network_with_nodes(1, true, vec![node.clone()]));
+
+        let (status, body) = faucet(
+            Path(1),
+            State(state),
+            Json(FaucetRequest {
+                node_id: 7,
+                address: "bcrt1qs758ursh4q9z627kt3pp5yysm78ddny6txaqgw".to_string(),
+                amount_btc: "0.1".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(!body.0.success);
+        assert_eq!(body.0.error.as_deref(), Some("FAUCET_FEATURE_DISABLED"));
+        assert!(node.faucet_calls.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn faucet_rejected_for_unknown_node() {
+        let state = test_state(vec![Network {
+            id: 1,
+            description: "test network".to_string(),
+            name: "test".to_string(),
+            query_interval: Duration::from_secs(15),
+            first_tracked_height: 0,
+            visible_heights_from_tip: 0,
+            extra_hotspot_heights: 0,
+            network_type: NetworkType::Regtest,
+            view_only_mode: false,
+            stale_rate_ranges: test_stale_rate_ranges(),
+            nodes: vec![],
+        }]);
+
+        let (status, body) = faucet(
+            Path(1),
+            State(state),
+            Json(FaucetRequest {
+                node_id: 99,
+                address: "bcrt1qs758ursh4q9z627kt3pp5yysm78ddny6txaqgw".to_string(),
+                amount_btc: "0.1".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(!body.0.success);
+        assert_eq!(body.0.error.as_deref(), Some("FAUCET_BACKEND_UNSUPPORTED"));
+    }
+
+    #[tokio::test]
+    async fn faucet_rejects_invalid_address() {
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok);
+        let state = test_state(single_node_network(1, node.clone()));
+
+        let (status, body) = faucet(
+            Path(1),
+            State(state),
+            Json(FaucetRequest {
+                node_id: 7,
+                address: "not-an-address".to_string(),
+                amount_btc: "0.1".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(!body.0.success);
+        assert_eq!(body.0.error.as_deref(), Some("FAUCET_INVALID_ADDRESS"));
+        assert!(node.faucet_calls.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn faucet_rejects_invalid_amount() {
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok);
+        let state = test_state(single_node_network(1, node.clone()));
+
+        for amount_btc in ["0", "-1", "abc"] {
+            let (status, body) = faucet(
+                Path(1),
+                State(state.clone()),
+                Json(FaucetRequest {
+                    node_id: 7,
+                    address: "bcrt1qs758ursh4q9z627kt3pp5yysm78ddny6txaqgw".to_string(),
+                    amount_btc: amount_btc.to_string(),
+                }),
+            )
+            .await;
+
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert!(!body.0.success);
+            assert_eq!(body.0.error.as_deref(), Some("FAUCET_INVALID_AMOUNT"));
+        }
+
+        assert!(node.faucet_calls.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn faucet_rejected_for_non_regtest_network() {
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok);
+        let state = test_state(vec![Network {
+            id: 1,
+            description: "test network".to_string(),
+            name: "test".to_string(),
+            query_interval: Duration::from_secs(15),
+            first_tracked_height: 0,
+            visible_heights_from_tip: 0,
+            extra_hotspot_heights: 0,
+            network_type: NetworkType::Signet,
+            view_only_mode: false,
+            stale_rate_ranges: test_stale_rate_ranges(),
+            nodes: vec![Arc::new(node.clone()) as Arc<dyn Node>],
+        }]);
+
+        let (status, body) = faucet(
+            Path(1),
+            State(state),
+            Json(FaucetRequest {
+                node_id: 7,
+                address: "bcrt1qs758ursh4q9z627kt3pp5yysm78ddny6txaqgw".to_string(),
+                amount_btc: "0.1".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(!body.0.success);
+        assert_eq!(body.0.error.as_deref(), Some("FAUCET_FEATURE_DISABLED"));
+        assert!(node.faucet_calls.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn faucet_rejected_when_node_not_eligible() {
+        let node =
+            MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok).with_supports_mining(false);
+        let state = test_state(single_node_network(1, node.clone()));
+
+        let (status, body) = faucet(
+            Path(1),
+            State(state),
+            Json(FaucetRequest {
+                node_id: 7,
+                address: "bcrt1qs758ursh4q9z627kt3pp5yysm78ddny6txaqgw".to_string(),
+                amount_btc: "0.1".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(!body.0.success);
+        assert_eq!(body.0.error.as_deref(), Some("FAUCET_NODE_NOT_ELIGIBLE"));
+        assert!(node.faucet_calls.lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn faucet_maps_insufficient_funds_to_specific_error() {
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok)
+            .with_faucet_behavior(ControlBehavior::DataError);
+        let state = test_state(single_node_network(1, node.clone()));
+
+        let (status, body) = faucet(
+            Path(1),
+            State(state),
+            Json(FaucetRequest {
+                node_id: 7,
+                address: "bcrt1qs758ursh4q9z627kt3pp5yysm78ddny6txaqgw".to_string(),
+                amount_btc: "0.1".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(!body.0.success);
+        assert_eq!(body.0.error.as_deref(), Some("FAUCET_INSUFFICIENT_FUNDS"));
+        assert_eq!(node.faucet_calls.lock().await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn faucet_maps_unsupported_backend_to_specific_error() {
+        let node = MockNode::new(7, ControlBehavior::Ok, ControlBehavior::Ok)
+            .with_faucet_behavior(ControlBehavior::NotSupported);
+        let state = test_state(single_node_network(1, node.clone()));
+
+        let (status, body) = faucet(
+            Path(1),
+            State(state),
+            Json(FaucetRequest {
+                node_id: 7,
+                address: "bcrt1qs758ursh4q9z627kt3pp5yysm78ddny6txaqgw".to_string(),
+                amount_btc: "0.1".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(!body.0.success);
+        assert_eq!(body.0.error.as_deref(), Some("FAUCET_BACKEND_UNSUPPORTED"));
+        assert_eq!(node.faucet_calls.lock().await.len(), 1);
     }
 
     #[tokio::test]
