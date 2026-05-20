@@ -385,7 +385,7 @@ impl fmt::Display for Error {
 
 #[derive(Deserialize)]
 struct Response<T> {
-    jsonrpc: String,
+    jsonrpc: Option<String>,
     result: Option<T>,
     error: Option<Error>,
     id: u64,
@@ -399,11 +399,13 @@ impl<T> Response<T> {
                 self.id, expected_id
             );
         }
-        if self.jsonrpc != JSON_RPC_VERSION {
-            warn!(
-                "JSON-RPC response version is {} but expected {}",
-                self.jsonrpc, JSON_RPC_VERSION
-            );
+        if let Some(jsonrpc_version) = self.jsonrpc.as_deref() {
+            if jsonrpc_version != JSON_RPC_VERSION {
+                warn!(
+                    "JSON-RPC response version is {} but expected {}",
+                    jsonrpc_version, JSON_RPC_VERSION
+                );
+            }
         }
         if let Some(error) = self.error.clone() {
             return Some(JsonRPCError::JsonRpc(format!(

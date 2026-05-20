@@ -33,7 +33,7 @@ pub enum StaleRateRange {
     AllTime,
 }
 
-#[derive(Clone, Deserialize, Serialize, Debug)]
+#[derive(Clone, Deserialize, Serialize, Debug, PartialEq, Eq)]
 pub enum NetworkType {
     Mainnet,
     Testnet,

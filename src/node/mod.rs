@@ -12,7 +12,7 @@ use crate::error::FetchError;
 use crate::types::{ChainTip, HeaderInfo, Tree};
 use async_trait::async_trait;
 use bitcoincore_rpc::bitcoin::blockdata::block::Header;
-use bitcoincore_rpc::bitcoin::{BlockHash, Network as BitcoinNetwork};
+use bitcoincore_rpc::bitcoin::{Amount, BlockHash, Network as BitcoinNetwork};
 use tokio::sync::mpsc::UnboundedSender;
 
 pub use bitcoin_core::BitcoinCoreNode;
@@ -21,6 +21,12 @@ pub use electrum::Electrum;
 pub use esplora::Esplora;
 pub(crate) use shared_fetch::fetch_missing_headers_for_unexpected_roots;
 pub use types::{HeaderLocator, NodeInfo, PeerInfo};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FaucetSendResult {
+    pub txid: String,
+    pub mined_blocks: u64,
+}
 
 fn is_regtest_or_signet(network: BitcoinNetwork) -> bool {
     matches!(network, BitcoinNetwork::Regtest | BitcoinNetwork::Signet)
@@ -84,6 +90,18 @@ pub trait Node: Send + Sync {
         Err(FetchError::NotSupported {
             node: self.info().implementation.clone(),
             operation: "mine_new_blocks",
+        })
+    }
+
+    /// Broadcasts a faucet transaction when supported by the backend/network.
+    async fn send_faucet_transaction(
+        &self,
+        _address: &str,
+        _amount: Amount,
+    ) -> Result<FaucetSendResult, FetchError> {
+        Err(FetchError::NotSupported {
+            node: self.info().implementation.clone(),
+            operation: "send_faucet_transaction",
         })
     }
 
