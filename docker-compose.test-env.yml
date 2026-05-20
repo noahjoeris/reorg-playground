@@ -6,6 +6,9 @@ services:
   bitcoind-regtest-a:
     image: *bitcoin_image
     restart: unless-stopped
+    ports:
+      - "18444:18444" # P2P / BIP157 CBF from host
+      - "18443:18443" # RPC from host, optional
     command:
       - -regtest
       - -server=1
@@ -15,6 +18,8 @@ services:
       - -rpcpassword=reorg-playground
       - -rpcport=18443
       - -port=18444
+      - -blockfilterindex=1
+      - -peerblockfilters=1
       - -addnode=bitcoind-regtest-b:18444
       - -datadir=/home/bitcoin/.bitcoin
     volumes:
@@ -37,6 +42,9 @@ services:
   bitcoind-regtest-b:
     image: *bitcoin_image
     restart: unless-stopped
+    ports:
+      - "18454:18444" # P2P / BIP157 CBF from host
+      - "18453:18443" # RPC from host, optional
     command:
       - -regtest
       - -server=1
@@ -44,6 +52,8 @@ services:
       - -rpcallowip=0.0.0.0/0
       - -rpcuser=reorg-playground
       - -rpcpassword=reorg-playground
+      - -blockfilterindex=1
+      - -peerblockfilters=1
       - -rpcport=18443
       - -port=18444
       - -datadir=/home/bitcoin/.bitcoin
