@@ -9,10 +9,10 @@ use axum::{
     http::StatusCode,
     response::sse::{Event, KeepAlive, Sse},
 };
+use bitcoincore_rpc::bitcoin::{Address, Amount, Denomination, Network as BitcoinNetwork};
 use futures_util::StreamExt;
 use futures_util::future::{join_all, ready};
 use futures_util::stream::Stream;
-use bitcoincore_rpc::bitcoin::{Address, Amount, Denomination, Network as BitcoinNetwork};
 use log::error;
 use serde::{Deserialize, Serialize};
 use tokio_stream::wrappers::BroadcastStream;
@@ -369,7 +369,9 @@ pub async fn faucet(
         }
     };
 
-    if !node.supports_controls(network.view_only_mode) || !node.supports_mining(network.view_only_mode) {
+    if !node.supports_controls(network.view_only_mode)
+        || !node.supports_mining(network.view_only_mode)
+    {
         return (
             StatusCode::BAD_REQUEST,
             Json(FaucetResponse {
@@ -775,9 +777,9 @@ mod tests {
                 ControlBehavior::DataError => Err(FetchError::DataError(
                     "insufficient funds in faucet wallet".to_string(),
                 )),
-                ControlBehavior::ExecutionError => {
-                    Err(FetchError::BitcoinCoreREST("mock faucet failure".to_string()))
-                }
+                ControlBehavior::ExecutionError => Err(FetchError::BitcoinCoreREST(
+                    "mock faucet failure".to_string(),
+                )),
             }
         }
 
@@ -1090,7 +1092,10 @@ mod tests {
         assert_eq!(body.0.mined_blocks, Some(0));
         assert_eq!(
             node.faucet_calls.lock().await.as_slice(),
-            &[("bcrt1qs758ursh4q9z627kt3pp5yysm78ddny6txaqgw".to_string(), 125_000_000)]
+            &[(
+                "bcrt1qs758ursh4q9z627kt3pp5yysm78ddny6txaqgw".to_string(),
+                125_000_000
+            )]
         );
     }
 

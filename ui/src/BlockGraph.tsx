@@ -74,7 +74,11 @@ function CenteredState({
       <div className="panel-glass-strong max-w-lg rounded-2xl px-6 py-7">
         {showSpinner && <Spinner className="mx-auto size-6 text-muted-foreground" />}
         <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Network State</p>
-        <h2 className={showSpinner ? 'mt-3 text-lg font-semibold text-foreground' : 'mt-2 text-lg font-semibold text-foreground'}>
+        <h2
+          className={
+            showSpinner ? 'mt-3 text-lg font-semibold text-foreground' : 'mt-2 text-lg font-semibold text-foreground'
+          }
+        >
           {title}
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{message}</p>

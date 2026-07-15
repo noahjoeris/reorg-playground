@@ -242,8 +242,8 @@ impl BitcoinCoreNode {
         T: DeserializeOwned + Send + 'static,
     {
         let auth = self.rpc_jsonrpc_auth()?;
-        let result = task::spawn_blocking(move || shared_fetch::jsonrpc_call(method, params, &auth))
-            .await?;
+        let result =
+            task::spawn_blocking(move || shared_fetch::jsonrpc_call(method, params, &auth)).await?;
         result.map_err(|e| {
             FetchError::BitcoinCoreREST(format!(
                 "Bitcoin Core RPC '{}' failed for {}: {}",
@@ -265,8 +265,8 @@ impl BitcoinCoreNode {
     {
         let auth = self.wallet_jsonrpc_auth(wallet)?;
         let wallet_name = wallet.to_string();
-        let result = task::spawn_blocking(move || shared_fetch::jsonrpc_call(method, params, &auth))
-            .await?;
+        let result =
+            task::spawn_blocking(move || shared_fetch::jsonrpc_call(method, params, &auth)).await?;
         result.map_err(|e| {
             FetchError::BitcoinCoreREST(format!(
                 "Bitcoin Core wallet RPC '{}' failed for {} wallet '{}': {}",
@@ -326,7 +326,10 @@ impl BitcoinCoreNode {
             .wallet_jsonrpc_required(FAUCET_WALLET, "getnewaddress", vec![])
             .await?;
         let _: Vec<String> = self
-            .rpc_jsonrpc_required("generatetoaddress", vec![json!(count), json!(reward_address)])
+            .rpc_jsonrpc_required(
+                "generatetoaddress",
+                vec![json!(count), json!(reward_address)],
+            )
             .await?;
         Ok(())
     }
@@ -598,10 +601,7 @@ impl Node for BitcoinCoreNode {
         loop {
             match self.try_send_faucet_transaction(address, amount).await {
                 Ok(txid) => {
-                    return Ok(FaucetSendResult {
-                        txid,
-                        mined_blocks,
-                    });
+                    return Ok(FaucetSendResult { txid, mined_blocks });
                 }
                 Err(error) if faucet_error_is_insufficient_funds(&error) => {
                     let balances = self.faucet_wallet_balances().await?;
@@ -845,7 +845,10 @@ mod tests {
 
     #[test]
     fn faucet_refill_stops_at_hard_cap() {
-        assert_eq!(next_faucet_refill_block_count(12.5, MAX_FAUCET_REFILL_BLOCKS), None);
+        assert_eq!(
+            next_faucet_refill_block_count(12.5, MAX_FAUCET_REFILL_BLOCKS),
+            None
+        );
     }
 
     #[test]
