@@ -46,7 +46,7 @@ impl Electrum {
         client_cell.get_or_init(|| {
             const ELECTRUM_RECONNECT_DURATION: Duration = Duration::from_secs(60);
             let config = ElectrumClientConfigBuilder::new()
-                .timeout(Some(10))
+                .timeout(Some(Duration::from_secs(10)))
                 .retry(2)
                 .validate_domain(false)
                 .build();

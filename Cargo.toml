@@ -2,6 +2,7 @@
 name = "reorg-playground"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.95"
 
 [dependencies]
 axum = "0.8"
@@ -10,16 +11,18 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 bitcoincore-rpc = "0.19"
-toml = "0.9"
+toml = "1.1"
 log = "0.4"
 env_logger = "0.11"
 hex = "0.4"
-rusqlite = { version = "0.37", features = ["bundled"] }
-minreq = { version = "2.14", features = ["json-using-serde", "https"] }
+rusqlite = { version = "0.40", features = ["bundled", "fallible_uint"] }
+minreq = { version = "3.0", features = ["json-using-serde", "https"] }
+# bitcoincore-rpc 0.19 still uses minreq 2; enable TLS for its HTTPS transport.
+minreq2 = { package = "minreq", version = "2.14", features = ["https"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures-util = "0.3"
 petgraph = { version = "0.8", features = ["serde-1"] }
 base64 = "0.22"
 async-trait = "0.1"
 bitcoin-pool-identification = "0.3"
-electrum-client = "0.24"
+electrum-client = "0.25"
